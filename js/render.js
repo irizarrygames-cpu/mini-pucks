@@ -1288,7 +1288,7 @@ const Render = {
       ctx.fillRect(0, 0, W, H);
     } else {
       const bands = 12, bw = W / bands;
-      for (let i = 0; i < bands; i++) { ctx.fillStyle = i % 2 ? '#4fbd3b' : '#5acb45'; ctx.fillRect(i * bw, 0, bw + 1, H); }
+      for (let i = 0; i < bands; i++) { ctx.fillStyle = i % 2 ? '#e0ebf5' : '#eaf3fa'; ctx.fillRect(i * bw, 0, bw + 1, H); }
     }
     const ch = Save.character();
     const { k, px, py } = this.homeSpot(W, H);
@@ -1298,12 +1298,12 @@ const Render = {
     };
     const cyc = (t % 0.9) / 0.9;
     if (cyc < 0.25) { fake.kickT = 0.2 * (1 - cyc / 0.25); }
-    ctx.fillStyle = 'rgba(20, 60, 20, 0.28)';
+    ctx.fillStyle = 'rgba(30, 50, 90, 0.22)';
     ctx.beginPath(); ctx.ellipse(px, py, 17 * k, 7.5 * k, 0, 0, Math.PI * 2); ctx.fill();
     Sprites.player(ctx, fake, px, py, k, t);
     const bz = Math.sin(cyc * Math.PI) * 55;
     const bx = px + 20 * k, by = py - 6 * k;
-    ctx.fillStyle = 'rgba(20, 60, 20, 0.28)';
+    ctx.fillStyle = 'rgba(30, 50, 90, 0.22)';
     ctx.beginPath(); ctx.ellipse(bx, py, 9 * k * (1 - bz / 150), 4 * k * (1 - bz / 150), 0, 0, Math.PI * 2); ctx.fill();
     Sprites.ball(ctx, { x: 0, y: 0, z: 0, vx: 1, vy: 0, roll: t * 6, shot: null, owner: null }, bx, by - bz * k * 0.9, k, t);
   },

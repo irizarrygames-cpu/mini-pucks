@@ -72,8 +72,11 @@ console.log('penalties');
     for (let i = 0; i < 120 * 3; i++) Match.step(m, CFG.STEP);
     out.stayed = Math.hypot(off.x - at.x, off.y - at.y) < 1 && !!off.boxed;
     out.neverHad = m.ball.owner !== off;
-    // and he is back on after PEN_TIME
-    for (let i = 0; i < 120 * (Rules.PEN_TIME + 1) && off.boxed; i++) { m.phase = 'play'; Match.step(m, CFG.STEP); }
+    // and he is back on after PEN_TIME. The box clock is match time, like the game clock: it stops for a
+    // goal and its slow motion, so the match is left to play on as it would (forcing it back to 'play'
+    // every step left a goal's slow motion on for good, and now and then he was still sitting), with
+    // room for a goal or two: PEN_TIME four times over.
+    for (let i = 0; i < 120 * Rules.PEN_TIME * 4 && off.boxed; i++) Match.step(m, CFG.STEP);
     out.back = !off.boxed && insideArena(off.x, off.y);
     return out;
   })()`);

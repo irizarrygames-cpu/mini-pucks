@@ -2469,3 +2469,6 @@ body.lefty #touch-zone { left: 50%; }
   animation: puckSlide 0.9s ease-in-out infinite alternate;
 }
 @keyframes puckSlide { from { transform: translateX(-4vmin) rotate(-3deg); } to { transform: translateX(4vmin) rotate(3deg); } }
+
+/* the ice behind the Customize stage and How to play (Mini Strikers had grass here) */
+.cust-view, .tut-canvas { background: #eaf3fa; }

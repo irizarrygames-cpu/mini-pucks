@@ -2281,7 +2281,7 @@ const Sprites = {
 
   shadow(ctx, sx, sy, k, r, z) {
     const s = clamp(1 - z / 140, 0.45, 1);
-    ctx.fillStyle = 'rgba(20, 60, 20, 0.28)';
+    ctx.fillStyle = 'rgba(30, 50, 90, 0.22)';   // a cool shadow on the ice (Mini Strikers' was green, for grass)
     ctx.beginPath(); ctx.ellipse(sx, sy, r * 1.05 * s * k, r * 0.5 * s * k, 0, 0, Math.PI * 2); ctx.fill();
   },
 

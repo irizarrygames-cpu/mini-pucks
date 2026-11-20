@@ -1575,7 +1575,7 @@ Object.assign(UI, {
 
   trailSwatch(cv, id) {
     const g = cv.getContext('2d'), w = cv.width, h = cv.height;
-    g.fillStyle = '#4fbd3b'; g.fillRect(0, 0, w, h);
+    g.fillStyle = '#eaf3fa'; g.fillRect(0, 0, w, h);   // (the ice)
     const pts = [];
     for (let i = 0; i < 12; i++) pts.push({ x: w - 30 - i * 13, y: h / 2 + Math.sin(i * 0.5) * 6 });
     const R = { S: 1.6, sx: (x) => x, sy: (y) => y };
@@ -1711,8 +1711,8 @@ Object.assign(UI, {
 
   celebSwatch(cv, id, e = 1.5) {
     const g = cv.getContext('2d'), w = cv.width, h = cv.height;
-    g.fillStyle = '#55c541'; g.fillRect(0, 0, w, h);
-    g.fillStyle = '#4fbd3b'; for (let x = 0; x < w; x += 40) g.fillRect(x, 0, 20, h);
+    g.fillStyle = '#eaf3fa'; g.fillRect(0, 0, w, h);   // the ice, in bands
+    g.fillStyle = '#e0ebf5'; for (let x = 0; x < w; x += 40) g.fillRect(x, 0, 20, h);
     const ch = Save.character();
     this._celebFake = this._celebFake || {};
     const p = this._celebFake[id] || (this._celebFake[id] = this.fakePlayer({ hair: ch.hair, hairColor: ch.hairColor, skin: ch.skin, cap: ch.cap, band: ch.band }));
@@ -1724,17 +1724,17 @@ Object.assign(UI, {
     const lying = pose && pose.lie;
     const ground = h - 14 - (lying ? 10 : pose && pose.kneel ? 12 : 0), scale = pose && (pose.jump > 25 || id === 'snowangel') ? 0.72 : pose && Math.abs(pose.rot || 0) > 1 ? 0.82 : 0.9;
     const fit = this.celebFit(scale, pose, p.look && p.look.acc);
-    g.fillStyle = 'rgba(20,60,20,0.28)'; g.beginPath(); g.ellipse(w / 2, ground, lying ? 38 : 25, 8, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = 'rgba(30, 50, 90, 0.22)'; g.beginPath(); g.ellipse(w / 2, ground, lying ? 38 : 25, 8, 0, 0, Math.PI * 2); g.fill();
     // Wider framing keeps every flip, floor pose, prop and equipped accessory inside its card.
     Sprites.player(g, p, w / 2 + (lying === 'back' ? 23 : lying === 'front' ? -20 : 0), ground - fit.up, fit.s, e);
   },
 
   ballSwatch(cv, id) {
     const g = cv.getContext('2d'), w = cv.width, h = cv.height;
-    g.fillStyle = '#4fbd3b'; g.fillRect(0, 0, w, h);
-    g.fillStyle = '#55c541'; for (let i = 0; i < 8; i += 2) g.fillRect(i * 25, 0, 25, h);
+    g.fillStyle = '#eaf3fa'; g.fillRect(0, 0, w, h);   // the ice, in bands
+    g.fillStyle = '#e0ebf5'; for (let i = 0; i < 8; i += 2) g.fillRect(i * 25, 0, 25, h);
     const skin = BALLS.find((b) => b.id === id);
-    g.fillStyle = 'rgba(20,60,20,0.28)'; g.beginPath(); g.ellipse(w / 2, h - 16, 26, 8, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = 'rgba(30, 50, 90, 0.22)'; g.beginPath(); g.ellipse(w / 2, h - 16, 26, 8, 0, 0, Math.PI * 2); g.fill();
     Sprites.ball(g, { x: 0, y: 0, z: 0, vx: 1, vy: 0.3, roll: 0.9, shot: null, owner: null, skin }, w / 2, h / 2 - 4, 3.2, Game.t);
   },
 
