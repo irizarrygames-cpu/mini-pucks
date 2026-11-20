@@ -164,9 +164,9 @@ const PEN_LEVELS = {
   hard: { read: 0.15, q: 0.34, aim: 0.375, sw: 0.325 },
 };
 const PEN_SAY = {
-  goal: [tl('GOAL!'), '#ffe14d'], save: [tl('SAVED!'), '#46d9ff'], wide: [tl('WIDE!'), '#ffffff'], over: [tl('OVER THE BAR!'), '#ffffff'],
-  post: [tl('OFF THE POST!'), '#ffffff'], bar: [tl('OFF THE BAR!'), '#ffffff'], postIn: [tl('IN OFF THE POST!'), '#ffe14d'], barIn: [tl('IN OFF THE BAR!'), '#ffe14d'],
-  wall: [tl('OFF THE WALL!'), '#ffffff'],
+  goal: [tl('GOAL!'), '#ffe14d'], save: [tl('SAVED!'), '#46d9ff'], wide: [tl('WIDE!'), '#ffffff'], over: [tl('OVER THE NET!'), '#ffffff'],
+  post: [tl('OFF THE POST!'), '#ffffff'], bar: [tl('OFF THE CROSSBAR!'), '#ffffff'], postIn: [tl('IN OFF THE POST!'), '#ffe14d'], barIn: [tl('IN OFF THE CROSSBAR!'), '#ffe14d'],
+  wall: [tl('BLOCKED!'), '#ffffff'],
 };
 
 const Pens = {
@@ -211,7 +211,7 @@ const Pens = {
 
   // something the sprite code can draw
   actor(team, keeper, look, number) {
-    return { team, isKeeper: keeper, look, number, vx: 0, vy: 0, fx: 0, fy: keeper ? 1 : -1, faceX: 0.001, kickT: 0, kickDur: 0.22,
+    return { team, isKeeper: keeper, look, number, vx: 0, vy: 0, fx: 0, fy: keeper ? 1 : -1, faceX: 0.001, kickT: 0, kickDur: 0.3,
       celebrateT: 0, celebKind: null, diveT: 0, diveDir: 0, stunT: 0, recoverT: 0, seed: Math.random() * 10, runPhase: 0, sad: false,
       slideT: 0, slideWindT: 0, fallT: 0, hopT: 0, skill: null, ultOn: false, ultShot: null, sprintOn: false, speed: 0 };
   },
@@ -667,31 +667,21 @@ const Pens = {
   drawStands(ctx, L, P, t) {
     const st = Save.stadium();
     const sky = L.sky, roofY = sky, roofH = L.roofH;
-    // --- the sky over the stand
-    ctx.fillStyle = st.sky ? st.sky[1] : '#a8dcff'; ctx.fillRect(0, 0, L.W, sky);
-    ctx.fillStyle = st.sky ? st.sky[0] : '#6fc2ff'; ctx.fillRect(0, 0, L.W, sky * 0.5);
-    const rs = mulberry32(11);
-    if (st.stars) {
-      ctx.fillStyle = '#ffffff';
-      for (let i = 0; i < 40; i++) { const r = 1 + rs() * 1.6; ctx.fillRect(rs() * L.W, rs() * sky * 0.8, r, r); }
-    } else if (st.kind === 'dusk') {
-      ctx.fillStyle = '#ffd86a'; ctx.beginPath(); ctx.arc(L.W * 0.78, sky * 0.4, sky * 0.2, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 3; ctx.stroke();
-    } else {
-      ctx.fillStyle = 'rgba(255,255,255,0.85)';
-      for (let i = 0; i < 3; i++) {
-        const cx = L.W * (0.12 + i * 0.33), cy = sky * (0.26 + (i % 2) * 0.16), r = sky * 0.11;
-        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.arc(cx + r, cy + r * 0.2, r * 0.8, 0, Math.PI * 2); ctx.arc(cx - r, cy + r * 0.2, r * 0.7, 0, Math.PI * 2); ctx.fill();
-      }
+    // --- an arena's roof: dark, with the lights hanging from it
+    ctx.fillStyle = '#1b1f33'; ctx.fillRect(0, 0, L.W, sky);
+    ctx.fillStyle = '#262b45'; ctx.fillRect(0, sky * 0.55, L.W, sky * 0.45);
+    for (let i = 0; i < 6; i++) {
+      const lx = L.W * (0.08 + i * 0.168), ly = sky * 0.42, r = Math.max(4, sky * 0.12);
+      ctx.fillStyle = 'rgba(255, 246, 200, 0.16)'; ctx.beginPath(); ctx.arc(lx, ly, r * 2.4, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#fff6c8'; ctx.beginPath(); ctx.arc(lx, ly, r, 0, Math.PI * 2); ctx.fill();
+      ctx.lineWidth = 2.5; ctx.strokeStyle = OUTLINE; ctx.stroke();
     }
-    // --- the country beyond the stand
-    if (typeof drawSkyline === 'function') drawSkyline(ctx, st, -L.W * 0.04, L.W * 1.04, sky + 1, sky * 0.78);
     // --- the stand, with its roof in the country's colours
     ctx.fillStyle = st.stands[0]; ctx.fillRect(0, roofY, L.W, L.gy - roofY);
     ctx.fillStyle = st.roof || st.stands[1]; ctx.fillRect(0, roofY, L.W, roofH);
     ctx.fillStyle = st.trim || '#ffe14d'; ctx.fillRect(0, roofY + roofH - Math.max(2, roofH * 0.22), L.W, Math.max(2, roofH * 0.22));
     ctx.fillStyle = OUTLINE; ctx.fillRect(0, roofY - 3, L.W, 3); ctx.fillRect(0, roofY + roofH, L.W, 3);
-    if (st.lights) {
+    if (false) {
       ctx.strokeStyle = OUTLINE; ctx.lineWidth = 2.5;
       for (let i = 0; i < 4; i++) {
         const lx = L.W * (0.14 + i * 0.24), lw = L.W * 0.07, lh = roofH * 1.1;
@@ -718,21 +708,27 @@ const Pens = {
       ctx.fillStyle = skins[f.skin]; ctx.beginPath(); ctx.arc(f.x, y - f.size * 0.2, f.size * 0.32, 0, Math.PI * 2); ctx.fill();
       if (jump && f.c % 3 === 0) { ctx.fillStyle = cols[f.c]; ctx.fillRect(f.x - f.size * 0.55, y - f.size * 0.75, f.size * 0.2, f.size * 0.5); }
     }
-    // --- advertising boards along the goal line: the ground and what its fans sing
+    // --- the boards along the end of the rink (white, a yellow kick plate, the arena and its chant on
+    // them) and the glass above them
     const by = L.gy - L.board;
-    ctx.fillStyle = shadeHex(st.seat || '#1b2a6b', -0.45); ctx.fillRect(0, by, L.W, L.board);
+    ctx.fillStyle = 'rgba(214, 236, 255, 0.28)'; ctx.fillRect(0, by - L.board * 1.6, L.W, L.board * 1.6);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+    for (let x = L.W * 0.06; x < L.W; x += L.W * 0.16) ctx.fillRect(x, by - L.board * 1.6, 2, L.board * 1.6);
+    ctx.fillRect(0, by - L.board * 1.6, L.W, 2);
+    ctx.fillStyle = '#f4f6fa'; ctx.fillRect(0, by, L.W, L.board);
+    ctx.fillStyle = '#f2c230'; ctx.fillRect(0, L.gy - L.board * 0.2, L.W, L.board * 0.2);
     ctx.fillStyle = OUTLINE; ctx.fillRect(0, by - 3, L.W, 3); ctx.fillRect(0, L.gy - 3, L.W, 3);
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    const fs = L.board * 0.5;
+    const fs = L.board * 0.46;
     const words = [st.name || 'MINI PUCKS', st.chant || tl("LET'S GO!")];
     ctx.font = `400 ${fs}px "Lilita One", system-ui, sans-serif`;
     let bx = -((t * 20) % 900);
     for (let i = 0; bx < L.W + 400; i++) {
       const word = words[i % words.length], w = ctx.measureText(word).width;
-      ctx.fillStyle = i % 2 ? '#ffffff' : st.trim || '#ffe14d';
-      ctx.fillText(word, bx + w / 2, by + L.board / 2 + 1);
+      ctx.fillStyle = i % 2 ? TEAMS.blue.board || TEAMS.blue.jersey : TEAMS.red.board || TEAMS.red.jersey;
+      ctx.fillText(word, bx + w / 2, by + L.board * 0.42);
       bx += w + fs * 2.2;
-      ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(bx - fs * 1.1, by + L.board / 2, fs * 0.18, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#9aa3b8'; ctx.beginPath(); ctx.arc(bx - fs * 1.1, by + L.board * 0.42, fs * 0.18, 0, Math.PI * 2); ctx.fill();
     }
   },
 
@@ -773,31 +769,32 @@ const Pens = {
   },
 
   drawGrass(ctx, L) {
-    const st = Save.stadium(), g = st.grass;
-    const a = g[0][0], b = g[1][0];
+    // the ice: cool white bands, wider as they come towards you, with skate marks across them
     let y = L.gy, i = 0, h = L.gh * 0.12;
-    while (y < L.H) { ctx.fillStyle = i % 2 ? a : b; ctx.fillRect(0, y, L.W, h + 1); y += h; h *= 1.18; i++; }
-    // the lines: goal line, the six-yard box, the spot
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, L.gy - 1, L.W, Math.max(3, L.s * 0.08));
-    const lw = Math.max(3, L.s * 0.09);
-    if (L.fk) {
-      // the six-yard box 5.5 m out, the edge of the penalty area 16.5 m out (the ball is 22 m out)
-      const at = (m) => L.spot.y + (L.gy - L.spot.y) * this.depth(L, 1 - m / PEN.FK.DIST).e;
-      const six = at(5.5), edge = at(16.5);
-      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = lw; ctx.lineJoin = 'miter';
-      const x1 = L.gx - L.gw * 0.78, x2 = L.gx + L.gw * 0.78, x1b = L.gx - L.gw * 0.92, x2b = L.gx + L.gw * 0.92;
-      ctx.beginPath(); ctx.moveTo(x1, L.gy); ctx.lineTo(x1b, six); ctx.lineTo(x2b, six); ctx.lineTo(x2, L.gy); ctx.stroke();
-      ctx.lineWidth = Math.max(3, lw * 1.3);
-      ctx.beginPath(); ctx.moveTo(0, edge); ctx.lineTo(L.W, edge); ctx.stroke();
-      return;
+    while (y < L.H) { ctx.fillStyle = i % 2 ? '#e4eef7' : '#edf5fb'; ctx.fillRect(0, y, L.W, h + 1); y += h; h *= 1.18; i++; }
+    const rs = mulberry32(5);
+    ctx.strokeStyle = 'rgba(140, 168, 205, 0.35)'; ctx.lineWidth = 1.2; ctx.lineCap = 'round';
+    for (let q = 0; q < 60; q++) {
+      const x = rs() * L.W, yy = L.gy + rs() * (L.H - L.gy), l = 20 + rs() * 70 * (yy / L.H), a = (rs() - 0.5) * 0.6;
+      ctx.beginPath(); ctx.moveTo(x, yy); ctx.quadraticCurveTo(x + l * 0.5, yy + Math.sin(a) * 6 - 3, x + l, yy + Math.sin(a) * l * 0.2); ctx.stroke();
     }
-    const box = L.gy + (L.spot.y - L.gy) * 0.3;
-    const x1 = L.gx - L.gw * 0.78, x2 = L.gx + L.gw * 0.78, x1b = L.gx - L.gw * 0.86, x2b = L.gx + L.gw * 0.86;
-    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = lw; ctx.lineJoin = 'miter';
-    ctx.beginPath(); ctx.moveTo(x1, L.gy); ctx.lineTo(x1b, box); ctx.lineTo(x2b, box); ctx.lineTo(x2, L.gy); ctx.stroke();
-    // where the ball touches the grass: it used to be painted lower, so the ball hung in the air above it
-    ctx.beginPath(); ctx.ellipse(L.spot.x, L.spot.y, L.s * L.near * 0.16, L.s * L.near * 0.07, 0, 0, Math.PI * 2); ctx.fill();
+    // the goal line, the blue crease in front of the net (edged red), and the red dot the shot is taken from
+    const dist = L.fk ? PEN.FK.DIST : PEN.SPOT;
+    const at = (m) => L.spot.y + (L.gy - L.spot.y) * this.depth(L, 1 - m / dist).e;
+    const across = (xm, m) => L.gx + xm * L.s * lerp(L.near, 1, this.depth(L, 1 - m / dist).e);
+    ctx.fillStyle = '#e2343c'; ctx.fillRect(0, L.gy - 1, L.W, Math.max(2, L.s * 0.05));
+    const R = 1.8;
+    ctx.beginPath();
+    for (let q = 0; q <= 24; q++) { const a = (q / 24) * Math.PI, xm = Math.cos(a) * R, m = Math.sin(a) * R; const px = across(xm, m), py = at(m); if (q) ctx.lineTo(px, py); else ctx.moveTo(px, py); }
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(96, 160, 255, 0.5)'; ctx.fill();
+    ctx.strokeStyle = '#e2343c'; ctx.lineWidth = Math.max(2, L.s * 0.05); ctx.stroke();
+    if (L.fk) {
+      // Top Shelf: a shot from the point, out at the blue line
+      ctx.fillStyle = '#2f6fd6'; const bl = at(dist - 1.2); ctx.fillRect(0, bl, L.W, Math.max(4, L.s * L.near * 0.22));
+    }
+    ctx.fillStyle = '#e2343c';
+    ctx.beginPath(); ctx.ellipse(L.spot.x, L.spot.y, L.s * L.near * 0.2, L.s * L.near * 0.08, 0, 0, Math.PI * 2); ctx.fill();
   },
 
   // the goal: net first (the ball can end up in it), then the frame over it
@@ -848,7 +845,7 @@ const Pens = {
     const pw = Math.max(5, L.s * 0.12), x0 = L.gx - L.gw / 2, x1 = L.gx + L.gw / 2, top = L.gy - L.gh;
     const bar = (x, y, w, h) => {
       ctx.fillStyle = OUTLINE; ctx.fillRect(x + 3, y + 3, w, h); // hard shadow
-      ctx.fillStyle = '#ffffff'; ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = '#e2343c'; ctx.fillRect(x, y, w, h);
       ctx.strokeStyle = OUTLINE; ctx.lineWidth = 2.5; ctx.strokeRect(x, y, w, h);
     };
     bar(x0 - pw, top - pw, pw, L.gh + pw);
@@ -955,7 +952,7 @@ const Pens = {
       ctx.fillStyle = 'rgba(22, 26, 51, 0.38)';
       ctx.beginPath(); ctx.ellipse(bp.x + bp.r * 0.12, bp.y + bp.r * 0.04, bp.r * 0.98, bp.r * 0.3, 0, 0, Math.PI * 2); ctx.fill();
     }
-    Sprites.ball(ctx, b, bp.x, bp.y - bp.r, bp.r / CFG.BALL_R, t);
+    Sprites.ball(ctx, b, bp.x, bp.y - bp.r * 0.35, (bp.r * 0.62) / CFG.BALL_R, t);
   },
 
   drawTaker(ctx, L, P, t) {
@@ -1019,9 +1016,9 @@ const Pens = {
       ctx.save(); ctx.translate(W / 2, L.gy - L.gh * 0.55); ctx.scale(z, z);
       if (chal) Render.chunkyText(ctx, P.chal.id === 'targets' ? tl('HIT A TARGET') : tl('SAVE IT!'), 0, 0, big, P.chal.id === 'targets' ? '#ffe14d' : '#46d9ff');
       else {
-      const mine = P.watch ? tl('{0} KICKS', [P.watchName || tl('THEY')]) : P.fk ? tl('YOUR FREE KICK') : tl('YOUR KICK');
-      const shout = this.sudden(P) && P.team === P.first ? tl('SUDDEN DEATH') : P.team === 'blue' ? mine : P.watch ? tl('{0} KICK', [TEAMS.red.name]) : tl('SAVE IT!');
-      const first = P.first === 'blue' ? (P.watch ? tl('{0} KICKS FIRST', [P.watchName || tl('THEY')]) : tl('YOU KICK FIRST')) : tl('{0} KICK FIRST', [TEAMS.red.name]);
+      const mine = P.watch ? tl('{0} SHOOTS', [P.watchName || tl('THEY')]) : tl('YOUR SHOT');
+      const shout = this.sudden(P) && P.team === P.first ? tl('SUDDEN DEATH') : P.team === 'blue' ? mine : P.watch ? tl('{0} SHOOT', [TEAMS.red.name]) : tl('SAVE IT!');
+      const first = P.first === 'blue' ? (P.watch ? tl('{0} SHOOTS FIRST', [P.watchName || tl('THEY')]) : tl('YOU SHOOT FIRST')) : tl('{0} SHOOT FIRST', [TEAMS.red.name]);
       if (P.phase === 'start') Render.chunkyText(ctx, first, 0, -big * 0.8, big * 0.55 * this.fit(first, 17), '#ffffff');
       const sh = big * this.fit(shout, 12), sw = sh * 0.56 * shout.length;
       boxes.shout = [W / 2 - sw / 2, L.gy - L.gh * 0.55 - sh * 0.6, W / 2 + sw / 2, L.gy - L.gh * 0.55 + sh * 0.6];
@@ -1090,7 +1087,7 @@ const Pens = {
     if (P.phase === 'end' && !chal) {
       const u = clamp(P.t / 0.35, 0, 1), z = easeOut(u);
       ctx.save(); ctx.translate(W / 2, L.gy - L.gh * 0.5); ctx.scale(z, z);
-      const won = P.watch ? tl('{0} WINS IT!', [P.watchName || tl('THEY')]) : P.fk ? tl('YOU WIN THE FREE KICKS!') : tl('YOU WIN THE SHOOTOUT!');
+      const won = P.watch ? tl('{0} WINS IT!', [P.watchName || tl('THEY')]) : P.fk ? tl('YOU WIN TOP SHELF!') : tl('YOU WIN THE SHOOTOUT!');
       Render.chunkyText(ctx, P.winner === 'blue' ? won : tl('{0} WIN IT', [TEAMS.red.name]), 0, 0, big * 0.8, P.winner === 'blue' ? '#ffe14d' : '#ffffff');
       ctx.restore();
     }
@@ -1098,9 +1095,9 @@ const Pens = {
     const kb = document.body.classList.contains('kb');
     let hint = null;
     if (P.watch) hint = null; // nobody tells a viewer to press anything
-    else if (P.phase === 'aim' && P.fk && !P.holding) hint = tl('SOFT AND HIGH GOES OVER THE WALL  ·  HARD GOES ROUND IT');
+    else if (P.phase === 'aim' && P.fk && !P.holding) hint = tl('SOFT AND HIGH GOES OVER THE BLOCKERS  ·  HARD GOES ROUND THEM');
     else if (P.phase === 'aim') hint = P.holding ? tl('LET GO TO SHOOT') : kb ? tl('AIM: WASD OR MOUSE  ·  HOLD SPACE OR CLICK FOR POWER') : tl('AIM WITH THE STICK  ·  HOLD SHOOT FOR POWER');
-    else if ((P.phase === 'runup' || P.phase === 'flight' || P.phase === 'idle') && P.team === 'red' && !P.dive) hint = kb ? tl('WATCH THE KICK  ·  CLICK WHERE TO DIVE, OR WASD + SPACE') : tl('WATCH THE KICK  ·  STICK + DIVE');
+    else if ((P.phase === 'runup' || P.phase === 'flight' || P.phase === 'idle') && P.team === 'red' && !P.dive) hint = kb ? tl('WATCH THE SHOT  ·  CLICK WHERE TO DIVE, OR WASD + SPACE') : tl('WATCH THE SHOT  ·  STICK + DIVE');
     if (hint) {
       const hs = clamp(Math.min(W, H) * 0.034, 12, 18);
       ctx.font = `400 ${hs}px "Lilita One", system-ui, sans-serif`;
