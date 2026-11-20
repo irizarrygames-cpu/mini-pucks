@@ -1145,7 +1145,7 @@ function performSkill(m, p, ix, iy) {
       b.x = p.x + dx * (p.r + CFG.BALL_R + 1); b.y = p.y + dy * (p.r + CFG.BALL_R + 1);
       p.kickT = 0.2; p.kickDur = 0.2; p.dodgeT = 0.3;
       FX.ring(b.x, b.y, '#ffffff', 4, 20, 0.25, 2.5);
-      say(tl('CRUYFF!'), '#ffffff');
+      say(tl('TOE DRAG!'), '#ffffff');
       addMeter(m, p, 3);
       break;
     }

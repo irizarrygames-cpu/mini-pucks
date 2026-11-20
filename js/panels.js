@@ -1467,7 +1467,7 @@ Object.assign(UI, {
       <div><h3>${tl('SKILLS &amp; CHECKS')}</h3><ul>
         <li>${tl('Skill + no direction: HOP (jumps checks)')}</li>
         <li>${tl('Skill + forward: through the legs / flip / burst')}</li>
-        <li>${tl('Skill + sideways: SPIN · backward: CRUYFF')}</li>
+        <li>${tl('Skill + sideways: SPIN · backward: TOE DRAG')}</li>
         <li>${tl('Any skill makes checks miss for a moment')}</li>
         <li>${tl('CHECK near the carrier to knock it loose and steal it')}</li>
         <li>${tl('Sprint drains stamina — empty means wait')}</li>

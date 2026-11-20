@@ -415,7 +415,7 @@ const CHARACTERS = [
   // stat, so his 99 dribbling is what ctl plays at (the 69 ball control is on the card). Passing 0 is
   // real: ratingAttr floors it at a pass 10% weaker than an average player's. Overall is set, not worked out.
   { id: 'matt', name: 'Matt', rarity: 'oneofone', only: ['matthidalgocr7'], buff: 1, ovr: 99,
-    stats: [[tl('PACE'), 99], [tl('DRIBBLING'), 99], [tl('SHOOTING'), 99], [tl('PUCK CONTROL'), 69], [tl('PASSING'), 0]],
+    stats: [[tl('PACE'), 99], [tl('STICKHANDLING'), 99], [tl('SHOOTING'), 99], [tl('PUCK CONTROL'), 69], [tl('PASSING'), 0]],
     r: { spd: 99, sht: 99, pas: 0, ctl: 99, def: 70 }, hair: 'buzz', hairColor: '#15161c', skin: '#c98b5e' },
 ];
 // Accessories: one slot, worn over any character. slot says where it's drawn on the body.
@@ -633,7 +633,7 @@ const overall = (r) => Math.round((r.spd + r.sht + r.pas + r.ctl + r.def) / 5);
 // the first is worth about two points, level 10 about three quarters of one, level 50 a fifth.
 // 60 is where everyone starts (an ordinary player); the bots offline average about 64.
 const STAT_KEYS = ['spd', 'sht', 'pas', 'ctl', 'def'];
-const STAT_NAMES = { spd: tl('SPEED'), sht: tl('SHOOTING'), pas: tl('PASSING'), ctl: tl('DRIBBLING'), def: tl('DEFENDING') };
+const STAT_NAMES = { spd: tl('SPEED'), sht: tl('SHOOTING'), pas: tl('PASSING'), ctl: tl('STICKHANDLING'), def: tl('DEFENDING') };
 const STAT_BASE = 60;
 const STAT_LEVEL_CAP = 2000; // only a guard against a broken save: nobody can afford anywhere near it
 const statLevel = (v) => Math.max(0, Math.min(STAT_LEVEL_CAP, Math.floor(Number(v) || 0)));
