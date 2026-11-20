@@ -590,8 +590,11 @@ const Clubs = {
     const extra = (k, c) => Math.min(...['stripes', 'checks', 'sleeves', 'hoops', 'halves', 'diag', 'center', 'band', 'sash'].map((x) => (k[x] ? colorDist(c, k[x]) : 999)));
     const score = (c) => Math.min(colorDist(c, hk.jersey), colorDist(c, ak.jersey), extra(hk, c), extra(ak, c));
     const ranked = KEEPER_COLORS.slice().sort((a, b) => score(b) - score(a));
-    const gk = (c) => ({ jersey: c, shade: shadeHex(c, -0.22), accent: colorLum(c) > 0.6 ? '#1b1d33' : '#ffffff', shorts: '#1b1d33', socks: c, shoes: '#1b1d33', gloves: '#ffffff' });
-    return { home: hk, away: ak, homeKeeper: gk(ranked[0]), awayKeeper: gk(ranked[1]), awayAlt: ak !== away.home };
+    // (hockey: a goalie wears his own team's jersey, with white pads, blocker and glove; the colour
+    // ranking above is Mini Strikers' and goes unused)
+    void ranked;
+    const gk = (kit) => Object.assign({ stripes: undefined, sleeves: undefined, center: undefined, checks: undefined, hoops: undefined, halves: undefined, diag: undefined, band: undefined, sash: undefined }, kit, { gloves: '#f4f5f7', pads: '#f4f5f7' });
+    return { home: hk, away: ak, homeKeeper: gk(hk), awayKeeper: gk(ak), awayAlt: ak !== away.home };
   },
 
   // Paint the blue slot (your side) and the red slot (the other side) everywhere.

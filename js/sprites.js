@@ -81,6 +81,29 @@ const Sprites = {
     if (p.throwIn) armsUp = 1; // (PRO MATCH: holding a throw-in over your head)
     if (p.sprintOn && sp > 0.5 && !slide) lean += 0.12;
 
+    // ---- the stick: where the top hand grips it and where its blade is (sprite units, facing +x).
+    // None in a celebration, a fall or a dive; a goalie holds his own (below).
+    let stick = null;
+    if (!cp && p.celebrateT <= 0 && !fall && !dive) {
+      let grip = [-2, -36], blade = [20, -1.5];
+      const c = p.charging ? clamp(p.chargeT / CFG.CHARGE_FULL, 0, 1) : 0;
+      if (p.isKeeper) { grip = [6, -34]; blade = [17, -1.5]; }
+      else if (p.slideT > 0 || (p.slideWindT || 0) > 0) { grip = [5, -30]; blade = [38, -1]; }   // a poke check
+      else if (p.kickT > 0) {
+        // through the puck and on: a shot follows through high, a pass stays low
+        const u = 1 - p.kickT / p.kickDur, big = p.kickDur >= 0.28;
+        blade = big ? [lerp(8, 30, u), lerp(-2, -44, u * u)] : [lerp(10, 27, u), lerp(-1.5, -9, u)];
+        grip = big ? [lerp(-4, 6, u), lerp(-38, -47, u)] : [-1, -36];
+      } else if (c > 0) {
+        // winding up: the blade goes back, and the longer you hold the higher it goes (a slapshot)
+        blade = [lerp(14, -36, c), lerp(-2, -60, c * c)];
+        grip = [lerp(-2, -7, c), lerp(-36, -45, c)];
+      } else if (p.hasBall) blade = [20 + Math.sin(t * 13 + (p.seed || 0)) * 3, -1.5];   // stickhandling
+      else if (sp > 0.08) blade = [19 + Math.sin(p.runPhase) * 2.5, -1.5];
+      stick = { grip, low: [lerp(grip[0], blade[0], 0.36), lerp(grip[1], blade[1], 0.36)], blade };
+      kick = 0;   // (skates never kick: the stick does it all)
+    }
+
     if (p.ultOn || p.ultShot) this.ultFire(ctx, p, t, sx, sy, k, false);
     ctx.save();
     ctx.translate(sx, sy);
@@ -117,24 +140,26 @@ const Sprites = {
     for (let i = 0; i < 2; i++) {
       const hx = (i ? 4.5 : -4.5) * (1 + 0.25 * buff), sw = i ? legSwing : -legSwing;
       let fx = hx + sw * 7, fy = -3 + Math.max(0, -sw) * -2.5;
-      if (kick && i === 1) { fx = hx + 13 * kick; fy = -7 - 6 * kick; }
       if (slide) { if (i === 1) { fx = hx + 20; fy = -11; } else { fx = hx + 7; fy = -4; } }
       if (tuck) { fy = -9; fx = hx + (i ? 4 : -2); }
       if (dive) { fx = hx * 1.3; fy = -1; }
       if (cp && cp.feet) { fx = cp.feet[i][0]; fy = cp.feet[i][1]; }
-      this.leg(ctx, hx, hipY, fx, fy, look.skin, kit.socks, buff);
+      this.leg(ctx, hx, hipY, fx, fy, kit.socks, kit.socks, buff, kit.accent === OUTLINE ? '#ffffff' : kit.accent);
       const premiumBoot = has('galaxyboots') ? '#7b4dff' : has('flameboots') ? '#ff5a1f' : has('goldboots') ? '#ffc21a'
         : has('neonboots') ? '#39ff88' : has('frostboots') ? '#9fe8ff' : null;
-      this.boot(ctx, fx, fy, premiumBoot && !p.isKeeper ? premiumBoot : kit.shoes, i === 1 && kick > 0.3);
+      this.boot(ctx, fx, fy, premiumBoot && !p.isKeeper ? premiumBoot : '#1b1d26', false);
+      if (p.isKeeper) this.goaliePad(ctx, hx, hipY, fx, fy, kit);
     }
 
     // ---- shorts ----
     ctx.save(); if (buff) ctx.scale(1 + 0.17 * buff, 1);
-    this.rr(ctx, -10.5, -27, 21, 11.5, 4.5); this.blob(ctx, kit.shorts);
+    // hockey pants: wide and padded, to just above the knee, a stripe down the side
+    this.rr(ctx, -12, -28.5, 24, 14, 5.5); this.blob(ctx, kit.shorts);
     ctx.fillStyle = shadeHex(kit.shorts, kit.shorts === '#ffffff' ? -0.12 : -0.3);
-    ctx.fillRect(-9.2, -19.5, 18.4, 2.8);
+    ctx.fillRect(-10.6, -18.4, 21.2, 3);
+    ctx.fillStyle = 'rgba(255,255,255,0.16)'; ctx.fillRect(-8.5, -26.5, 6, 6);
     ctx.fillStyle = kit.accent === OUTLINE ? '#3a3f66' : kit.accent;
-    ctx.fillRect(7.2, -25.5, 2.2, 8.5);
+    ctx.fillRect(8.4, -27, 2.6, 10.5);
     ctx.restore();
 
     if (upperLean) { ctx.translate(0, -22); ctx.rotate(upperLean); ctx.translate(0, 22); }
@@ -151,15 +176,22 @@ const Sprites = {
       if (kick) { hx = side * 16; hy = -34; }
       if (slide && side < 0) { hx = -16; hy = -22; }
       if (cp && cp.hands) { const hand = cp.hands[side < 0 ? 0 : 1]; hx = hand[0]; hy = hand[1]; }
-      this.limb(ctx, side * shX, shY, hx, hy, 5.6 + 3 * buff, look.skin);
+      if (stick) { const hand = side < 0 ? stick.grip : stick.low; hx = hand[0]; hy = hand[1]; }
+      // a hockey jersey's long sleeve, with a stripe round it above the elbow
+      const sleeve = kit.sleeves || kit.jersey;
+      this.limb(ctx, side * shX, shY, hx, hy, 6.2 + 3 * buff, sleeve);
       if (buff) {
         // the bicep: a flat bulge a little way down the arm, with a pale flat highlight on it
         const bx = lerp(side * shX, hx, 0.5) + side * 1.4, by = lerp(shY, hy, 0.5);
-        ctx.beginPath(); ctx.arc(bx, by, 5.4 + 1.2 * buff, 0, Math.PI * 2); this.blob(ctx, look.skin);
-        ctx.fillStyle = look.hi || (look.hi = shadeHex(look.skin, 0.22));
-        ctx.beginPath(); ctx.ellipse(bx - side * 1.2, by - 2.2, 1.6, 2.6, 0.25 * side, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(bx, by, 5.4 + 1.2 * buff, 0, Math.PI * 2); this.blob(ctx, sleeve);
       }
       const armLen = Math.hypot(hx - side * shX, hy - shY) || 1;
+      {
+        const f0 = Math.min(0.5, 6 / armLen), f1 = Math.min(0.66, 9 / armLen);
+        ctx.strokeStyle = kit.accent === OUTLINE ? '#ffffff' : kit.accent; ctx.lineWidth = 6.2 + 3 * buff; ctx.lineCap = 'butt';
+        ctx.beginPath(); ctx.moveTo(lerp(side * shX, hx, f0), lerp(shY, hy, f0)); ctx.lineTo(lerp(side * shX, hx, f1), lerp(shY, hy, f1)); ctx.stroke();
+        ctx.lineCap = 'round';
+      }
       if (has('robotarm') && side > 0 && !p.isKeeper) {
         ctx.strokeStyle = OUTLINE; ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(side * shX, shY); ctx.lineTo(hx, hy); ctx.stroke();
         ctx.strokeStyle = '#9aa7bd'; ctx.lineWidth = 4.2; ctx.stroke();
@@ -186,8 +218,9 @@ const Sprites = {
         ctx.beginPath(); ctx.arc(wx, wy, 4.1, 0, Math.PI * 2); this.blob(ctx, '#ff3a3f');
         ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(wx, wy, 1.7, 0, Math.PI * 2); ctx.fill();
       }
-      ctx.beginPath(); ctx.arc(hx, hy, p.isKeeper ? 4.8 : 3.4 + 0.9 * buff, 0, Math.PI * 2);
-      this.blob(ctx, p.isKeeper ? kit.gloves : look.skin);
+      // hockey gloves (a goalie: a blocker on the stick hand, a catching glove on the other)
+      if (p.isKeeper) this.goalieHand(ctx, hx, hy, side, kit);
+      else { this.rr(ctx, hx - 4.4, hy - 4.2, 8.8, 8.4, 3); this.blob(ctx, colorLum(kit.shorts) > 0.8 ? kit.jersey : kit.shorts); }
       ctx.beginPath(); ctx.arc(side * shX, shY + 1, 5.6 + 1.8 * buff, 0, Math.PI * 2); this.blob(ctx, kit.sleeves || kit.jersey);
       if (has('armband') && side > 0 && !p.isKeeper) {
         const f = Math.min(0.62, 7 / armLen), ax = lerp(side * shX, hx, f), ay = lerp(shY, hy, f);
@@ -195,7 +228,7 @@ const Sprites = {
         ctx.fillStyle = OUTLINE; ctx.font = '900 6px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('C', ax, ay + 0.4);
       }
     };
-    arm(-1, -armSwing);
+    if (!stick) arm(-1, -armSwing);
 
     // ---- torso: flat cel-shaded jersey ----
     ctx.save(); if (buff) ctx.scale(1 + 0.3 * buff, 1);
@@ -218,6 +251,9 @@ const Sprites = {
     ctx.fillStyle = kit.stripes || kit.center || kit.checks || kit.hoops || kit.halves || kit.diag || kit.band || kit.sash ? 'rgba(0, 0, 0, 0.16)' : kit.shade;
     this.rr(ctx, -11, -31, 22, 6.5, 3); ctx.fill();   // lower shadow band
     ctx.fillRect(-10.5, -42, 4, 13);                   // back-side panel
+    // a hockey jersey's stripes round the hem
+    ctx.fillStyle = kit.accent === OUTLINE ? '#ffffff' : kit.accent; ctx.fillRect(-12, -30.4, 24, 2.6);
+    ctx.fillStyle = colorLum(kit.jersey) > 0.8 ? shadeHex(kit.jersey, -0.25) : '#ffffff'; ctx.fillRect(-12, -27.2, 24, 1.6);
     ctx.fillStyle = kit.accent === OUTLINE ? '#ffffff' : kit.accent;
     ctx.fillRect(8.6, -42, 2.4, 13);                   // side stripe
     ctx.fillStyle = kit.hi || (kit.hi = shadeHex(kit.jersey, 0.25));
@@ -244,12 +280,14 @@ const Sprites = {
     ctx.restore();
 
     for (const a of accs) { if (back) this.accessory(ctx, a, 'back', p, t, back, sp); this.accessory(ctx, a, 'neck', p, t, back, sp); }
+    if (stick) { this.hockeyStick(ctx, stick, p.isKeeper); arm(-1, -armSwing); }
     arm(1, armSwing);
 
     // ---- head ----
     // a skinny body still gets a normal head, so the face never looks squeezed
     if (slim !== 1) { ctx.save(); ctx.scale(1 / slim, 1); }
     this.head(ctx, look, back, t, p);
+    if (p.isKeeper) this.goalieMask(ctx, back, kit);
     const faceProp = cp && (cp.prop === 'shades' || cp.prop === 'glasses');
     for (const a of accs) if (!(faceProp && accIsFace(a))) this.accessory(ctx, a, 'head', p, t, back, sp);
     if (cp && cp.prop) this.celebProp(ctx, cp.prop, ce, back, p);
@@ -1126,7 +1164,7 @@ const Sprites = {
     }
   },
 
-  leg(ctx, x1, y1, x2, y2, skin, sock, buff = 0) {
+  leg(ctx, x1, y1, x2, y2, skin, sock, buff = 0, stripe = null) {
     ctx.lineCap = 'round';
     ctx.strokeStyle = OUTLINE; ctx.lineWidth = 9.8 + 2.6 * buff;
     ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
@@ -1135,14 +1173,82 @@ const Sprites = {
     const mx = lerp(x1, x2, 0.45), my = lerp(y1, y2, 0.45);
     ctx.strokeStyle = sock; ctx.lineWidth = 6.8 + 2.6 * buff; ctx.lineCap = 'butt';
     ctx.beginPath(); ctx.moveTo(mx, my); ctx.lineTo(x2, y2); ctx.stroke();
+    if (stripe) {
+      // a hockey sock's band round the shin
+      ctx.strokeStyle = stripe;
+      ctx.beginPath(); ctx.moveTo(lerp(x1, x2, 0.55), lerp(y1, y2, 0.55)); ctx.lineTo(lerp(x1, x2, 0.7), lerp(y1, y2, 0.7)); ctx.stroke();
+    }
     ctx.lineCap = 'round';
   },
 
+  // a skate: the boot, the blade's holder and the steel blade under it
   boot(ctx, x, y, color, lifted) {
-    ctx.beginPath(); ctx.ellipse(x + 3, y + 0.5, 7.2, 4.2, lifted ? -0.35 : 0, 0, Math.PI * 2);
-    this.blob(ctx, color);
-    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.6;
-    ctx.beginPath(); ctx.moveTo(x + 0.5, y - 0.5); ctx.lineTo(x + 6, y - 1.8); ctx.stroke();
+    this.rr(ctx, x - 3.8, y - 6.5, 9.6, 6.6, 2.6); this.blob(ctx, color);
+    ctx.beginPath(); ctx.ellipse(x + 3.2, y - 1.6, 5.4, 3, 0, 0, Math.PI * 2); this.blob(ctx, color);
+    ctx.fillStyle = '#f4f5f7'; ctx.fillRect(x - 3, y + 0.6, 11.5, 1.8);
+    ctx.strokeStyle = OUTLINE; ctx.lineWidth = 3.4; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x - 4.2, y + 4.2); ctx.lineTo(x + 10.4, y + 4.2); ctx.stroke();
+    ctx.strokeStyle = '#d6dde8'; ctx.lineWidth = 1.6; ctx.stroke();
+  },
+
+  // A hockey stick, in sprite units: the shaft from just past the top hand down to the heel, then the
+  // blade turned off it (along the ice when it is down), white tape on the blade, a knob at the top.
+  // A goalie's has a wide paddle low down.
+  hockeyStick(ctx, s, goalie) {
+    const [gx, gy] = s.grip, [bx, by] = s.blade;
+    const dx = bx - gx, dy = by - gy, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L;
+    const butt = [gx - ux * 5, gy - uy * 5];
+    const ang = Math.atan2(uy, ux) - 1.05, tx = Math.cos(ang), ty = Math.sin(ang);
+    const toe = [bx + tx * (goalie ? 12 : 10), by + ty * (goalie ? 12 : 10)];
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.strokeStyle = OUTLINE; ctx.lineWidth = 5.4;
+    ctx.beginPath(); ctx.moveTo(butt[0], butt[1]); ctx.lineTo(bx, by); ctx.lineTo(toe[0], toe[1]); ctx.stroke();
+    ctx.strokeStyle = '#e3b06b'; ctx.lineWidth = 2.8; ctx.stroke();
+    if (goalie) {
+      // the paddle: the lower part of the shaft, wide
+      const p0 = [lerp(gx, bx, 0.55), lerp(gy, by, 0.55)];
+      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 7.4; ctx.beginPath(); ctx.moveTo(p0[0], p0[1]); ctx.lineTo(bx, by); ctx.stroke();
+      ctx.strokeStyle = '#e3b06b'; ctx.lineWidth = 4.6; ctx.stroke();
+    }
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2.6;
+    ctx.beginPath(); ctx.moveTo(bx + tx * 2, by + ty * 2); ctx.lineTo(toe[0] - tx * 0.6, toe[1] - ty * 0.6); ctx.stroke();
+    ctx.strokeStyle = '#1b1d24'; ctx.lineWidth = 3.2;
+    ctx.beginPath(); ctx.moveTo(butt[0], butt[1]); ctx.lineTo(butt[0] + ux * 3.4, butt[1] + uy * 3.4); ctx.stroke();
+  },
+
+  // a goalie's leg pad: a tall rounded block from the knee down over the skate, ridged, in white
+  goaliePad(ctx, hx, hipY, fx, fy, kit) {
+    const kx = lerp(hx, fx, 0.4), ky = lerp(hipY, fy, 0.4);
+    const x = Math.min(kx, fx) - 4.5, top = ky - 2, w = Math.abs(fx - kx) + 9, h = fy - top + 1;
+    this.rr(ctx, x, top, w + 2, h, 3.4); this.blob(ctx, kit.pads || '#f4f5f7');
+    ctx.fillStyle = kit.jersey; ctx.fillRect(x + 1.4, top + h * 0.28, w - 0.8, 2.2);
+    ctx.strokeStyle = 'rgba(0,0,0,0.18)'; ctx.lineWidth = 1;
+    for (const f of [0.45, 0.62, 0.8]) { ctx.beginPath(); ctx.moveTo(x + 1.5, top + h * f); ctx.lineTo(x + w + 0.5, top + h * f); ctx.stroke(); }
+  },
+  // a goalie's hands: the blocker (a flat board) on the stick hand, the catching glove on the other
+  goalieHand(ctx, hx, hy, side, kit) {
+    if (side > 0) {
+      this.rr(ctx, hx - 5.5, hy - 7, 9, 12, 2.2); this.blob(ctx, kit.pads || '#f4f5f7');
+      ctx.fillStyle = kit.jersey; ctx.fillRect(hx - 4.2, hy - 5.6, 6.4, 2);
+    } else {
+      ctx.beginPath(); ctx.ellipse(hx - 1, hy, 7, 6.2, -0.3, 0, Math.PI * 2); this.blob(ctx, kit.pads || '#f4f5f7');
+      ctx.strokeStyle = kit.jersey; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.moveTo(hx - 5, hy - 3); ctx.lineTo(hx + 3, hy - 3); ctx.moveTo(hx - 5, hy + 1); ctx.lineTo(hx + 3, hy + 1); ctx.stroke();
+    }
+  },
+  // the goalie's mask: a white shell over the head in the team's colour band, a cage over the face
+  goalieMask(ctx, back, kit) {
+    const hx = 1.5, hy = -56, R = 15.6;
+    ctx.beginPath(); ctx.arc(hx, hy, R, Math.PI * 0.95, Math.PI * 2.05); ctx.lineTo(hx + R * 0.9, hy + 6); ctx.lineTo(hx - R * 0.9, hy + 6); ctx.closePath();
+    this.blob(ctx, '#f4f5f7');
+    ctx.fillStyle = kit.jersey; ctx.fillRect(hx - R * 0.95, hy - 7, R * 1.9, 3.4);
+    if (!back) {
+      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      for (const x of [3, 7, 11]) { ctx.moveTo(hx + x, hy - 3); ctx.lineTo(hx + x, hy + 9); }
+      for (const y of [0, 4.5, 9]) { ctx.moveTo(hx + 1, hy + y); ctx.lineTo(hx + 13.5, hy + y); }
+      ctx.stroke();
+    }
   },
 
   head(ctx, look, back, t, p) {

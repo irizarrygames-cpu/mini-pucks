@@ -904,6 +904,7 @@ const Render = {
     for (const it of list) {
       if (it.p) {
         const p = it.p, sx = this.sx(p.x, p.y), sy = this.sy(p.y, 0);
+        p.hasBall = b.owner === p;
         if (sx < -100 || sx > W + 100 || sy < -40 || sy > H + 160) continue;
         Sprites.player(ctx, p, sx, sy, this.k(p.y), t);
       } else if (it.ball) {
