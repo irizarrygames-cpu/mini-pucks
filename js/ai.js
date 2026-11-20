@@ -1,6 +1,6 @@
 // Simple role-based AI: one presser, markers, supporters, and a goalkeeper.
 // Keeper save model (see decideSave). blueBonus is for the bots' shots at your keeper.
-const KEEPER = { base: 0.94, speed: 0.34, power: 0.12, close: 0.2, mid: 0.08, far: 0.12, corner: 0.22, blueBonus: 0, botShot: 0.04,
+const KEEPER = { base: 1.03, speed: 0.34, power: 0.12, close: 0.2, mid: 0.08, far: 0.12, corner: 0.22, blueBonus: 0, botShot: 0.04,
   // YOUR keeper gets a hand in the small formats: in 1v1 one bot attacks him all match and he
   // used to get nothing, which is why 1v1 was the one format the player lost.
   yours: { '1v1': 0.12, '2v2': 0.06, '3v3': 0.02, '4v4': 0, training: 0 },
