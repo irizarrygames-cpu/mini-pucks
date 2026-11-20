@@ -2100,7 +2100,6 @@ I18N.add('nl', {
   "WATCH THE SHOT  ·  STICK + DIVE": "LET OP HET SCHOT  ·  STICK + DUIK",
   "ICING!": "ICING!",
   "TRIPPING!": "BEENTJE LICHTEN!",
-  "{0} POWER PLAY": "POWERPLAY {0}",
   "BACK ON!": "WEER ERIN!",
   "POWER PLAY {0} · 0:{1}": "POWERPLAY {0} · 0:{1}",
   "CHALLENGED YOU TO A SHOOTOUT": "HEEFT JE UITGEDAAGD VOOR EEN SHOOTOUT",
@@ -2151,4 +2150,5 @@ I18N.add('nl', {
   "Challenged {0} to Top Shelf": "Je hebt {0} uitgedaagd voor Bovenhoek",
   "Shootout with {0} starting": "Shootout met {0} begint",
   "Top Shelf with {0} starting": "Bovenhoek met {0} begint",
+  "POWER PLAY": "POWERPLAY",
 });

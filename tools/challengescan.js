@@ -39,7 +39,7 @@ assert.equal(ws.bob.last('start').side, 'red');
 send('ann', {t:'challenge.send', name:'BOB'});
 assert.equal(ws.ann.last('social').ok, false, 'cannot challenge during match');
 
-// build 116: the challenger picks what it is — a 1v1, penalties, free kicks or a PRO MATCH (2v2, a
+// build 116: the challenger picks what it is — a 1v1, a shootout, Top Shelf or a PRO MATCH (2v2, a
 // fill-in each); never a cup. A game too old for PRO MATCH is never put in one. PLAY AGAIN at the
 // end is a rematch with the same friend at the same thing.
 (async () => {
@@ -56,7 +56,7 @@ assert.equal(ws.ann.last('social').ok, false, 'cannot challenge during match');
   };
   const p = play('dan', 'eve', 'pens');
   assert.equal(p.inv.mode, 'pens', 'the invite says penalties');
-  assert(/penalties/.test(p.sent.msg), 'the challenger is told: penalties');
+  assert(/shootout/.test(p.sent.msg), 'the challenger is told: a shootout');
   assert.equal(ws.dan.last('pen.start').kind, 'pens', 'a penalty shootout starts');
   assert.equal(ws.eve.last('pen.start').kind, 'pens');
   const f = play('fay', 'gus', 'fk');
@@ -89,6 +89,6 @@ assert.equal(ws.ann.last('social').ok, false, 'cannot challenge during match');
   // a match out of the queue has none
   const q = game._roomOf('hal');
   assert(!q.challenge || q.challenge.mode === 'pro', 'only a challenge room carries one');
-  console.log('challenge scan passed (1v1, penalties, free kicks, PRO MATCH, older games, rematch)');
+  console.log('challenge scan passed (1v1, shootout, Top Shelf, PRO MATCH, older games, rematch)');
   process.exit(0);
 })();

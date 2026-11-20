@@ -2100,7 +2100,6 @@ I18N.add('id', {
   "WATCH THE SHOT  ·  STICK + DIVE": "AWASI TEMBAKAN  ·  STIK + LOMPAT",
   "ICING!": "ICING!",
   "TRIPPING!": "MENJEGAL!",
-  "{0} POWER PLAY": "POWER PLAY {0}",
   "BACK ON!": "KEMBALI!",
   "POWER PLAY {0} · 0:{1}": "POWER PLAY {0} · 0:{1}",
   "CHALLENGED YOU TO A SHOOTOUT": "MENANTANGMU ADU PENALTI",
@@ -2151,4 +2150,5 @@ I18N.add('id', {
   "Challenged {0} to Top Shelf": "Kamu menantang {0} Pojok Atas",
   "Shootout with {0} starting": "Adu penalti dengan {0} dimulai",
   "Top Shelf with {0} starting": "Pojok Atas dengan {0} dimulai",
+  "POWER PLAY": "POWER PLAY",
 });

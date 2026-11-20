@@ -2100,7 +2100,6 @@ I18N.add('fr', {
   "WATCH THE SHOT  ·  STICK + DIVE": "REGARDE LE TIR  ·  STICK + PLONGER",
   "ICING!": "DÉGAGEMENT INTERDIT !",
   "TRIPPING!": "CROCHE-PIED !",
-  "{0} POWER PLAY": "SUPÉRIORITÉ NUMÉRIQUE {0}",
   "BACK ON!": "DE RETOUR !",
   "POWER PLAY {0} · 0:{1}": "SUPÉRIORITÉ {0} · 0:{1}",
   "CHALLENGED YOU TO A SHOOTOUT": "T'A DÉFIÉ AUX TIRS AU BUT",
@@ -2151,4 +2150,5 @@ I18N.add('fr', {
   "Challenged {0} to Top Shelf": "Tu as défié {0} à Lucarne",
   "Shootout with {0} starting": "Les tirs au but avec {0} commencent",
   "Top Shelf with {0} starting": "Lucarne avec {0} commence",
+  "POWER PLAY": "SUPÉRIORITÉ NUMÉRIQUE",
 });

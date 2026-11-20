@@ -2100,7 +2100,6 @@ I18N.add('it', {
   "WATCH THE SHOT  ·  STICK + DIVE": "GUARDA IL TIRO  ·  STICK + TUFFO",
   "ICING!": "LIBERAZIONE VIETATA!",
   "TRIPPING!": "SGAMBETTO!",
-  "{0} POWER PLAY": "SUPERIORITÀ {0}",
   "BACK ON!": "DI NUOVO IN PISTA!",
   "POWER PLAY {0} · 0:{1}": "SUPERIORITÀ {0} · 0:{1}",
   "CHALLENGED YOU TO A SHOOTOUT": "TI HA SFIDATO AI RIGORI",
@@ -2151,4 +2150,5 @@ I18N.add('it', {
   "Challenged {0} to Top Shelf": "Hai sfidato {0} ad All'Incrocio",
   "Shootout with {0} starting": "Iniziano i rigori con {0}",
   "Top Shelf with {0} starting": "Inizia All'Incrocio con {0}",
+  "POWER PLAY": "SUPERIORITÀ",
 });

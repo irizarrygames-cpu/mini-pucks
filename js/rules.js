@@ -85,7 +85,7 @@ const Rules = {
     if (!Game.headless) {
       Sound.whistle();
       const side = ((victim.team === 'blue' ? m.home : m.club) || {}).name || '';
-      FX.showBanner(tl('TRIPPING!'), '#ffe14d', 1.5, tl('{0} POWER PLAY', [side]));
+      FX.showBanner(tl('TRIPPING!'), '#ffe14d', 1.5, side ? side + ' · ' + tl('POWER PLAY') : tl('POWER PLAY'));   // (in parts: I18N.parts translates each one online)
     }
     // the faceoff in the offending side's end, on the side the trip was, the fouled side's puck
     const mk = rinkMarks(), H = CFG.FIELD_H, own = ownGoalX(p.team);

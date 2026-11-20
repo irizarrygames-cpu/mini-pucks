@@ -2100,7 +2100,6 @@ I18N.add('tr', {
   "WATCH THE SHOT  ·  STICK + DIVE": "ŞUTU İZLE  ·  ÇUBUK + PLONJON",
   "ICING!": "ICING!",
   "TRIPPING!": "ÇELME!",
-  "{0} POWER PLAY": "{0} SAYISAL ÜSTÜNLÜKTE",
   "BACK ON!": "GERİ DÖNDÜ!",
   "POWER PLAY {0} · 0:{1}": "SAYISAL ÜSTÜNLÜK {0} · 0:{1}",
   "CHALLENGED YOU TO A SHOOTOUT": "SANA PENALTI ATIŞLARI İÇİN MEYDAN OKUDU",
@@ -2151,4 +2150,5 @@ I18N.add('tr', {
   "Challenged {0} to Top Shelf": "{0} kişisine Üst Köşe için meydan okudun",
   "Shootout with {0} starting": "{0} ile penaltı atışları başlıyor",
   "Top Shelf with {0} starting": "{0} ile Üst Köşe başlıyor",
+  "POWER PLAY": "SAYISAL ÜSTÜNLÜK",
 });

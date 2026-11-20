@@ -2100,7 +2100,6 @@ I18N.add('de', {
   "WATCH THE SHOT  ·  STICK + DIVE": "SCHAU AUF DEN SCHUSS  ·  STICK + HECHTEN",
   "ICING!": "ICING!",
   "TRIPPING!": "BEINSTELLEN!",
-  "{0} POWER PLAY": "ÜBERZAHL {0}",
   "BACK ON!": "WIEDER DRIN!",
   "POWER PLAY {0} · 0:{1}": "ÜBERZAHL {0} · 0:{1}",
   "CHALLENGED YOU TO A SHOOTOUT": "HAT DICH ZUM PENALTYSCHIESSEN HERAUSGEFORDERT",
@@ -2151,4 +2150,5 @@ I18N.add('de', {
   "Challenged {0} to Top Shelf": "Du hast {0} zu Oben Rein herausgefordert",
   "Shootout with {0} starting": "Penaltyschießen mit {0} beginnt",
   "Top Shelf with {0} starting": "Oben Rein mit {0} beginnt",
+  "POWER PLAY": "ÜBERZAHL",
 });

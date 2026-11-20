@@ -2100,7 +2100,6 @@ I18N.add('ro', {
   "WATCH THE SHOT  ·  STICK + DIVE": "URMĂREȘTE ȘUTUL  ·  STICK + PLONJON",
   "ICING!": "DEGAJARE INTERZISĂ!",
   "TRIPPING!": "PIEDICĂ!",
-  "{0} POWER PLAY": "SUPERIORITATE {0}",
   "BACK ON!": "ÎNAPOI PE GHEAȚĂ!",
   "POWER PLAY {0} · 0:{1}": "SUPERIORITATE {0} · 0:{1}",
   "CHALLENGED YOU TO A SHOOTOUT": "TE-A PROVOCAT LA LOVITURI DE DEPARTAJARE",
@@ -2151,4 +2150,5 @@ I18N.add('ro', {
   "Challenged {0} to Top Shelf": "L-ai provocat pe {0} la Sub Bară",
   "Shootout with {0} starting": "Încep loviturile de departajare cu {0}",
   "Top Shelf with {0} starting": "Începe Sub Bară cu {0}",
+  "POWER PLAY": "SUPERIORITATE",
 });

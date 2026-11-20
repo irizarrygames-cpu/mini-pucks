@@ -2100,7 +2100,6 @@ I18N.add('pt', {
   "WATCH THE SHOT  ·  STICK + DIVE": "OLHE O ARREMESSO  ·  ANALÓGICO + PULAR",
   "ICING!": "ICING!",
   "TRIPPING!": "RASTEIRA!",
-  "{0} POWER PLAY": "POWER PLAY DE {0}",
   "BACK ON!": "DE VOLTA!",
   "POWER PLAY {0} · 0:{1}": "POWER PLAY {0} · 0:{1}",
   "CHALLENGED YOU TO A SHOOTOUT": "TE DESAFIOU PARA UM SHOOTOUT",
@@ -2151,4 +2150,5 @@ I18N.add('pt', {
   "Challenged {0} to Top Shelf": "Você desafiou {0} para o No Ângulo",
   "Shootout with {0} starting": "Começa o shootout com {0}",
   "Top Shelf with {0} starting": "Começa o No Ângulo com {0}",
+  "POWER PLAY": "POWER PLAY",
 });

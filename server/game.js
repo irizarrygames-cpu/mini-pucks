@@ -32,7 +32,7 @@ const MATCH_MINUTES = 2;            // every match is two minutes: CFG.MATCH_MIN
 const FORMAT_SIZE = { 'pens': 1, 'fk': 1, '1v1': 1, '2v2': 2, '3v3': 3, '4v4': 4 };
 const SHOOTOUT = (format) => format === 'pens' || format === 'fk';
 const PHASES = ['kickoff', 'play', 'goal', 'reset', 'timeup', 'over', 'replay', 'cele', 'restart'];
-// PRO MATCH online (build 116): the bigger pitch with throw-ins, corners and goal kicks, 2v2 to 4v4.
+// PRO MATCH online: the bigger rink with icing, penalties and the power play, 2v2 to 4v4.
 // Asked for as 'pro/2v2' and so on; its rooms play in a sandbox of their own (simOf).
 const PRO_FORMATS = new Set(['2v2', '3v3', '4v4']);
 const proFormat = (f) => (typeof f === 'string' && f.startsWith('pro/') && PRO_FORMATS.has(f.slice(4)) ? f.slice(4) : null);
@@ -1526,7 +1526,7 @@ function createGame({ getUser, userName, saveDB, onlineRecord, isNameTaken, worl
     const m = room.m, b = m.ball;
     const P = m.players.map((p) => {
       const winding = (p.slideWindT || 0) > 0;
-      const flags = (p.sad ? 1 : 0) | (p.slideHit ? 2 : 0) | (p.sprintOn ? 4 : 0) | (p.charging ? 8 : 0) | (p.skill ? 16 : 0) | (p.throwIn ? 32 : 0);
+      const flags = (p.sad ? 1 : 0) | (p.slideHit ? 2 : 0) | (p.sprintOn ? 4 : 0) | (p.charging ? 8 : 0) | (p.skill ? 16 : 0) | (p.throwIn ? 32 : 0) | (p.boxed ? 64 : 0);
       return [Math.round(p.x), Math.round(p.y), Math.round(p.vx), Math.round(p.vy), r100(p.fx), r100(p.fy), r100(p.faceX), flags,
         r100(p.kickT), r100(p.kickDur), r100(p.stunT), r100(p.recoverT), r100(p.diveT), Math.sign(p.diveDir || 0), r100(p.celebrateT),
         celebIndex(p.celebKind), r100(p.slideT), r100(p.slideWindT || 0),
@@ -1541,8 +1541,9 @@ function createGame({ getUser, userName, saveDB, onlineRecord, isNameTaken, worl
       k: room.tick, ph: PHASES.indexOf(m.phase), pt: r100(m.phaseT), tm: Math.round(m.time * 10), ot: m.overtime ? Math.round(m.otTime) : -1,
       sc: [m.score.blue, m.score.red], mt: [Math.round(m.meter.blue), Math.round(m.meter.red)], ts: r100(m.timeScale), p: P, b: B, ev: room.events.splice(0),
     };
-    // PRO MATCH: a throw-in, corner or goal kick being set up: what, whose, who takes it, the spot,
-    // the aim, and how long it has been waiting
+    // PRO MATCH: who sits in the penalty box, and how long they have left (tenths)
+    if (m.box && m.box.length) common.pb = m.box.map((e) => [m.players.indexOf(e.p), Math.max(0, Math.round(e.t * 10))]);
+    // (Mini Strikers: a throw-in, corner or goal kick being set up; hockey never has one, so no rs)
     const R = m.restart;
     if (R) common.rs = [RESTART_KINDS.indexOf(R.kind), R.team === 'red' ? 1 : 0, m.players.indexOf(R.taker), Math.round(R.bx), Math.round(R.by), r100(R.ax), r100(R.ay), r100(R.t)];
     const body = JSON.stringify(common).slice(1);

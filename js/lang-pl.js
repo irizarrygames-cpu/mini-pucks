@@ -2100,7 +2100,6 @@ I18N.add('pl', {
   "WATCH THE SHOT  ·  STICK + DIVE": "PATRZ NA STRZAŁ  ·  GAŁKA + RZUT",
   "ICING!": "UWOLNIENIE!",
   "TRIPPING!": "PODCIĘCIE!",
-  "{0} POWER PLAY": "PRZEWAGA: {0}",
   "BACK ON!": "WRACA NA LÓD!",
   "POWER PLAY {0} · 0:{1}": "PRZEWAGA {0} · 0:{1}",
   "CHALLENGED YOU TO A SHOOTOUT": "WYZWAŁ CIĘ NA RZUTY KARNE",
@@ -2151,4 +2150,5 @@ I18N.add('pl', {
   "Challenged {0} to Top Shelf": "Wyzwałeś {0} na Pod Poprzeczkę",
   "Shootout with {0} starting": "Rzuty karne z {0} się zaczynają",
   "Top Shelf with {0} starting": "Pod Poprzeczkę z {0} się zaczyna",
+  "POWER PLAY": "PRZEWAGA",
 });

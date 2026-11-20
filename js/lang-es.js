@@ -2100,7 +2100,6 @@ I18N.add('es', {
   "WATCH THE SHOT  ·  STICK + DIVE": "MIRA EL TIRO  ·  STICK + LANZARSE",
   "ICING!": "¡ICING!",
   "TRIPPING!": "¡ZANCADILLA!",
-  "{0} POWER PLAY": "SUPERIORIDAD DE {0}",
   "BACK ON!": "¡DE VUELTA!",
   "POWER PLAY {0} · 0:{1}": "SUPERIORIDAD {0} · 0:{1}",
   "CHALLENGED YOU TO A SHOOTOUT": "TE HA RETADO A UNA TANDA DE PENALTIS",
@@ -2151,4 +2150,5 @@ I18N.add('es', {
   "Challenged {0} to Top Shelf": "Has retado a {0} a Escuadra",
   "Shootout with {0} starting": "Empieza la tanda de penaltis con {0}",
   "Top Shelf with {0} starting": "Empieza Escuadra con {0}",
+  "POWER PLAY": "SUPERIORIDAD",
 });

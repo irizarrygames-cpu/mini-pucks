@@ -2100,7 +2100,6 @@ I18N.add('sv', {
   "WATCH THE SHOT  ·  STICK + DIVE": "TITTA PÅ SKOTTET  ·  SPAK + KASTA",
   "ICING!": "ICING!",
   "TRIPPING!": "FÄLLNING!",
-  "{0} POWER PLAY": "POWERPLAY {0}",
   "BACK ON!": "TILLBAKA PÅ ISEN!",
   "POWER PLAY {0} · 0:{1}": "POWERPLAY {0} · 0:{1}",
   "CHALLENGED YOU TO A SHOOTOUT": "HAR UTMANAT DIG TILL STRAFFLÄGGNING",
@@ -2151,4 +2150,5 @@ I18N.add('sv', {
   "Challenged {0} to Top Shelf": "Du har utmanat {0} till Nättaket",
   "Shootout with {0} starting": "Straffläggningen mot {0} börjar",
   "Top Shelf with {0} starting": "Nättaket mot {0} börjar",
+  "POWER PLAY": "POWERPLAY",
 });

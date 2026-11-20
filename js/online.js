@@ -273,6 +273,8 @@ const Online = {
           team: this.mirror ? (shotTeam === 'blue' ? 'red' : 'blue') : shotTeam, bl: (this.mirror ? r[12] : r[11]) / 100, br: (this.mirror ? r[11] : r[12]) / 100 };
       })(),
       ev: msg.ev.map((e) => this.flipEvent(e)),
+      // PRO MATCH: who is in the penalty box, and for how long
+      pb: Array.isArray(msg.pb) ? msg.pb.map((r) => ({ i: r[0], t: r[1] / 10 })) : null,
       // PRO MATCH: a restart being set up (see the server's snapshot)
       rs: Array.isArray(msg.rs) ? (() => {
         const r = msg.rs, team = r[1] ? 'red' : 'blue';
@@ -346,7 +348,10 @@ const Online = {
     // (only a restart, where everyone is put back in place, drops the smoothing; a goal keeps it gliding)
     const phaseChanged = this._lastPhase !== m.phase && (m.phase === 'kickoff' || m.phase === 'reset' || m.phase === 'restart');
     this._lastPhase = m.phase;
-    if (m.rules) this.updateRestart(latest, since);
+    if (m.rules) {
+      this.updateRestart(latest, since);
+      m.box = (latest.pb || []).map((e) => ({ p: m.players[e.i], t: Math.max(0, e.t - since) })).filter((e) => e.p);
+    }
     m.overtime = latest.ot >= 0; m.otTime = Math.max(0, latest.ot);
     m.score = latest.score; m.meter = latest.meter; m.timeScale = latest.ts;
     const me = this.watching ? this.nobody : m.human;
@@ -654,6 +659,7 @@ const Online = {
   },
   // where a player will be `t` seconds on: running straight on; a lunge or a fall slowing down
   extrapolate(S, t) {
+    if (S.flags & 64) return { x: S.x, y: S.y };   // in the penalty box
     let k = t;
     if (S.slideT > 0) k = (1 - Math.exp(-1.5 * t)) / 1.5;
     else if (S.fallT > 0 || S.diveT > 0 || S.stunT > 0.2 || S.recoverT > 0) k = (1 - Math.exp(-4 * t)) / 4;
@@ -673,7 +679,7 @@ const Online = {
     p.celebrateT = S.celebrateT; p.celebKind = S.celebKind;
     p.slideT = S.slideT; p.slideWindT = S.slideWindT; p.fallT = S.fallT; p.hopT = lerp(A.hopT, B.hopT, u);
     p.slideDirX = S.sdx; p.slideDirY = S.sdy; p.slideWindX = S.sdx; p.slideWindY = S.sdy;
-    p.sad = !!(S.flags & 1); p.slideHit = !!(S.flags & 2); p.sprintOn = !!(S.flags & 4); p.throwIn = !!(S.flags & 32);
+    p.sad = !!(S.flags & 1); p.slideHit = !!(S.flags & 2); p.sprintOn = !!(S.flags & 4); p.throwIn = !!(S.flags & 32); p.boxed = !!(S.flags & 64);
     p.ultOn = !!(S.ultFlags & 1);
     p.ultShot = S.ultFlags & 2 ? { kind: S.ultKind, t: S.ultShotT, dur: 0.8 } : null;
     if (p !== this.m.human) p.charging = !!(S.flags & 8);
@@ -733,7 +739,7 @@ const Online = {
     // the server is moving you itself (lunge, spin, dive, trip, celebration, restart): follow it
     // (PRO MATCH: while a throw-in, corner or goal kick is set up you can still move — unless it's yours)
     const restartFree = snap.phase === 'restart' && !(snap.rs && snap.rs.taker === this.you);
-    const busy = S.slideT > 0 || S.slideWindT > 0 || (S.flags & 16) || (S.ultFlags & 2) || S.fallT > 0 || S.stunT > 0.2 || S.celebrateT > 0 || (snap.phase !== 'play' && !restartFree);
+    const busy = S.slideT > 0 || S.slideWindT > 0 || (S.flags & 16) || (S.flags & 64) || (S.ultFlags & 2) || S.fallT > 0 || S.stunT > 0.2 || S.celebrateT > 0 || (snap.phase !== 'play' && !restartFree);
     this.predOk = !busy;
     if (busy) return;
     const p = { x: S.x, y: S.y, vx: S.vx, vy: S.vy, r: me.r, stamina: me.stamina, exhausted: me.exhausted, burstT: (burstT || 0) / 100 };

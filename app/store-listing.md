@@ -7,31 +7,31 @@ Paste these into Play Console. Everything here is true of the game as it is now;
 **App name** (30 max): `Mini Pucks`
 
 **Short description** (80 max):
-`Fast, colourful arcade football. Play solo, online or with your friends!`
+`Fast, colourful arcade hockey. Play solo, online or with your friends!`
 
 **Full description** (4000 max):
 
 ```
-Mini Pucks is quick, colourful arcade football for everyone. Dribble, pass, shoot and tackle your way through 1v1, 2v2, 3v3 and 4v4 matches, solo or against real players from around the world.
+Mini Pucks is quick, colourful arcade ice hockey for everyone. Skate, pass, deke, check and shoot your way through 1v1, 2v2, 3v3 and 4v4 games, solo or against real players from around the world.
 
 PLAY YOUR WAY
 - Quick Match: a fast game against a random country, with no connection needed
-- Pro Match: a bigger pitch with the real rules. The ball goes out for throw-ins, corners and goal kicks (2v2 to 4v4), against the bots or online
+- Pro Match: a bigger rink with the real rules: icing, penalties and the power play, and faceoffs on the dots (2v2 to 4v4), against the bots or online
 - Play Online: real players from every country, and every win moves your country up the league
 - Ranked: 1v1 for rank points. Win and climb from Bronze all the way to Immortal (eleven ranks)
-- Friends: challenge a friend to a 1v1, penalties, free kicks or a Pro Match, make a room, share the code and play together, or run a friend cup
+- Friends: challenge a friend to a 1v1, a shootout, Top Shelf or a Pro Match, make a room, share the code and play together, or run a friend cup
 - World Cup: play for the trophy online or against the bots. Lose once and you are out
-- Club Career: play for one of a hundred clubs from Europe, South America, Saudi Arabia, the USA, Mexico and Egypt (made-up names and badges), sign a new contract every three days and get paid coins for every goal and assist, then win the Champions Cup
-- Free Kicks: bend it over the wall or round it, against the bots or a real player online
-- Penalty Shootouts, Skill Challenges and Training for when you want to practise
+- Club Career: play for one of 32 pro teams from cities across the USA and Canada (made-up names and badges), sign a new contract every three days and get paid coins for every goal and assist, then win the Champions Cup
+- Top Shelf: shoot from the point, over the blockers or round them, against the bots or a real player online
+- Shootouts, Skill Challenges and Training for when you want to practise
 
 MAKE IT YOURS
 - One player, all yours: pick the haircut, the colours and the build, then spend coins to train five stats
-- Dozens of skill moves, goal celebrations, balls and trails, and as many accessories as you like at once
-- A ULT that is a different flaming kick every time: volley, bicycle kick, backflip kick or scorpion kick
+- Dozens of dekes, goal celebrations, pucks and trails, and as many accessories as you like at once
+- A ULT that is a different flaming trick shot every time: a one-timer, a spin-o-rama, a lacrosse goal, one between the legs or a flying slapshot
 - Win coins, open crates and collect everything. Every crate shows its odds
-- 154 football emotes to collect and use in matches, with three new ones in the emote shop every day
-- Daily rewards, missions and medals to chase
+- 157 emotes to collect and use in games, with three new ones in the emote shop every day
+- A free season pass every two weeks, daily rewards, missions and medals to chase
 
 SAFE AND SIMPLE
 - Play as a guest straight away, or make a free account to keep your progress safe and play online
@@ -46,14 +46,14 @@ Play in English, Spanish, Portuguese, French, German, Italian, Dutch, Turkish, P
 ```
 
 **App category**: Games, Sports
-**Tags**: Sports, Football / Soccer, Arcade, Multiplayer
+**Tags**: Sports, Hockey, Arcade, Multiplayer
 **Contact email**: irizarrygames@gmail.com
 **Privacy policy**: https://mini-pucks.onrender.com/privacy.html
 
 ## Graphics to upload
 - App icon 512x512: `icon-512.png` in the project folder
-- Feature graphic 1024x500: `Desktop/Mini Pucks - Play Store/Store pictures/mini-pucks-feature-graphic.png`
-- Phone screenshots (landscape, at least 2, up to 8): `mini-pucks-screenshot-1-match.png` and `mini-pucks-screenshot-2-penalties.png` in the same folder (1920x1080, 24-bit PNG). Made by `tools/storeart.js`; run it again after a big change to the look.
+- Feature graphic 1024x500: not made yet (`tools/storeart.js` makes one from the game)
+- Phone screenshots (landscape, at least 2, up to 8, 1920x1080, 24-bit PNG): not made yet; `tools/storeart.js` makes a game and a shootout picture.
 
 ## App content questionnaires
 
@@ -75,4 +75,4 @@ Play in English, Spanish, Portuguese, French, German, Italian, Dutch, Turkish, P
 ## First release
 - Release type: Production (after the closed test described in PUBLISHING.md) or Closed testing first.
 - Upload the `.aab` file. Use Play App Signing (the default); the file is signed with the upload key.
-- Release name: `1.2.1 (22)`
+- Release name: `1.0.0 (1)`

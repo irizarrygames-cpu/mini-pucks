@@ -2,8 +2,9 @@
 //   node tools/proscan.js
 // PRO MATCH has queues of its own (pro/2v2, pro/3v3, pro/4v4) and a PRO switch in private rooms. Its
 // rooms play in a sandbox of their own on the bigger pitch, side by side with ordinary rooms on the
-// normal one. The snapshots carry the restart (phase 'restart', rs) and the thrower's pose, the taker's
-// PASS takes it, and a game too old to draw the big pitch is kept out of all of it.
+// normal one. Icing stops play (the banner, the whistle, a faceoff in the icing side's end); the
+// snapshots say who sits in the penalty box and for how long (pb, flag 64); the boards keep the puck in
+// (no restarts); and a game too old to draw the big rink is kept out of all of it.
 const { createGame } = require('../server/game');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -79,51 +80,63 @@ const PH_RESTART = 8, PH_PLAY = 1;
   check('the PRO room kicks off in the middle of the big pitch (3000 wide)', Math.abs(room.m.ball.x - 1500) < 80, Math.round(room.m.ball.x));
   check('the ordinary room in the middle of the normal one (2400 wide)', Math.abs(nroom.m.ball.x - 1200) < 80, Math.round(nroom.m.ball.x));
 
-  console.log('a throw-in, online');
+  console.log('icing, online');
   {
     const seat = room.seats.find((s) => s.userId === 'p1'), me = seat.player, ws = socks.p1;
-    const other = me.team === 'blue' ? 'red' : 'blue';
-    const m = room.m, b = m.ball;
-    // the ball goes out off the other side, right by p1: p1's throw
-    for (const p of m.players) if (p !== me && !p.isKeeper && Math.hypot(p.x - 1500, p.y) < 500) p.y = 900;
-    me.x = 1500; me.y = 60; me.noPickupT = 1;
-    if (b.owner) b.owner = null;
-    b.x = 1500; b.y = -12; b.vx = 0; b.vy = -50; b.z = 0; b.shot = null; b.lastTouchTeam = other;
-    const n = ws.got.length;
-    const snap = await waitFor(ws, (x) => x.t === 's' && x.ph === PH_RESTART && Array.isArray(x.rs), n, 3000);
-    check('the snapshots say a restart is on, and what it is', !!snap && snap.rs[0] === 0, snap && snap.rs);
-    // (build 117: one of the side's real players takes it, picked at random)
-    const tk = snap && m.players[snap.rs[2]], tseat = tk && room.seats.find((x) => x.player === tk);
-    check("it is p1's side's, taken by one of its real players", !!tseat && tseat.human && tk.team === me.team && snap.rs[1] === (me.team === 'red' ? 1 : 0), snap && { rs: snap.rs, taker: tseat && tseat.userId });
-    const you = snap ? snap.rs[2] : -1, tws = tseat ? socks[tseat.userId] : ws;
-    check('the thrower is drawn with the ball over their head', snap && (snap.p[you][7] & 32) === 32 && snap.b[2] > 40, snap && { flags: snap.p[you][7], z: snap.b[2] });
-    check('the clock has stopped', snap && (await (async () => { const t0 = m.time; await sleep(300); return m.time === t0 && m.phase === 'restart'; })()));
-    const banner = ws.got.slice(n).some((x) => x.t === 's' && x.ev.some((e) => e.e === 'f' && e.n === 'showBanner' && e.a[0] === 'THROW-IN'));
+    const m = room.m, b = m.ball, W = 3000, H = 1750;   // (the PRO rink)
+    for (let i = 0; i < 200 && m.phase !== 'play'; i++) await sleep(20);
+    const dir = me.team === 'blue' ? 1 : -1;           // blue attacks the goal at x = W (as on every screen)
+    const far = dir > 0 ? W : 0;
+    // everyone else well out of the way, p1 with the puck in their own half
+    for (const p of m.players) if (p !== me && !p.isKeeper) { p.x = W / 2; p.y = 120; p.vx = 0; p.vy = 0; }
+    me.x = W / 2 - dir * 500; me.y = H / 2 + 420; me.vx = 0; me.vy = 0;
+    b.owner = me; b.shot = null;
+    await sleep(80);
+    // let it go, flat out, right across their goal line well wide of the net
+    b.owner = null; me.noPickupT = 2; me.x = W / 2 - dir * 500; me.y = 200;
+    b.x = far - dir * 60; b.y = H / 2 + 420; b.z = 0; b.vx = dir * 900; b.vy = 0; b.vz = 0; b.lastTouchTeam = me.team;
+    const n = ws.got.length, score = m.score.blue + m.score.red;
+    const snap = await waitFor(ws, (x) => x.t === 's' && x.ev.some((e) => e.e === 'f' && e.n === 'showBanner' && e.a[0] === 'ICING!'), n, 3000);
     const whistle = ws.got.slice(n).some((x) => x.t === 's' && x.ev.some((e) => e.e === 's' && e.n === 'whistle'));
-    check('everyone gets the THROW-IN banner and the whistle', banner && whistle, { banner, whistle });
-    // the taker aims into the pitch and presses PASS
-    const n2 = tws.got.length;
-    tws.msg({ t: 'i', s: 1, x: 0.3, y: 1, sp: 0, a: 32 });
-    await sleep(60);
-    tws.msg({ t: 'i', s: 2, x: 0.3, y: 1, sp: 0, a: 1 });
-    const back = await waitFor(tws, (x) => x.t === 's' && x.ph === PH_PLAY, n2, 2000);
-    check("the taker's PASS takes it, and play goes on", !!back && !back.rs, back && back.ph);
-    check('thrown into the pitch, not back out', back && back.b[4] > 0, back && back.b.slice(0, 6));
+    check('everyone gets the ICING! banner and the whistle', !!snap && whistle, { banner: !!snap, whistle });
+    check('it is not a goal', m.score.blue + m.score.red === score);
+    const fo = await waitFor(ws, (x) => x.t === 's' && x.ph === 0, n, 2000);
+    const own = dir > 0 ? 0 : W;
+    check("the faceoff is in the icing side's own end", !!fo && Math.abs(fo.b[0] - own) < W * 0.25, fo && { puck: fo.b.slice(0, 2), own });
+    check('and the other side has the puck', !!fo && fo.b[6] >= 0 && m.players[fo.b[6]] && m.players[fo.b[6]].team !== me.team, fo && fo.b[6]);
   }
 
-  console.log('nobody stands about: a restart a bot takes');
+  console.log('the penalty box, online');
   {
-    const m = room.m, b = m.ball;
-    const n = socks.p2.got.length;
-    // over p1's own goal line wide of the post, off the other side: a goal kick, which a keeper takes
-    const seat = room.seats.find((s) => s.userId === 'p1');
-    const own = seat.team === 'blue' ? 0 : 3000, other = seat.team === 'blue' ? 'red' : 'blue';
+    const m = room.m, ws = socks.p2;
+    const seat = room.seats.find((s) => s.userId === 'p2'), me = seat.player, i = m.players.indexOf(me);
+    for (let k = 0; k < 200 && m.phase !== 'play'; k++) await sleep(20);
+    // p2 sits two seconds for tripping (what Rules.penalty does, short)
+    m.box = m.box || []; m.box.push({ p: me, t: 2 }); me.boxed = true;
+    const n = ws.got.length;
+    const snap = await waitFor(ws, (x) => x.t === 's' && Array.isArray(x.pb) && x.pb.length, n, 2000);
+    check('the snapshots say who is in the box and for how long', !!snap && snap.pb[0][0] === i && snap.pb[0][1] > 5 && snap.pb[0][1] <= 20, snap && snap.pb);
+    check("and that player's flags say so", !!snap && (snap.p[i][7] & 64) === 64, snap && snap.p[i][7]);
+    check('they are drawn in the box, behind the boards', !!snap && snap.p[i][1] < -40, snap && snap.p[i].slice(0, 2));
+    // pushing the stick does nothing in the box
+    const y0 = me.y;
+    ws.msg({ t: 'i', s: 900, x: 0, y: 1, sp: 1, a: 0 });
+    await sleep(400);
+    check('the stick does not move them', Math.abs(me.y - y0) < 1 && me.boxed, { y0, y: me.y });
+    const back = await waitFor(ws, (x) => x.t === 's' && !x.pb && !(x.p[i][7] & 64), ws.got.length, 3500);
+    check('time served: back on the ice, and the box is empty', !!back && !me.boxed && back.p[i][1] > -10, back && back.p[i].slice(0, 2));
+  }
+
+  console.log('the boards keep it in: no restarts');
+  {
+    const m = room.m, b = m.ball, n = socks.p2.got.length;
+    for (let k = 0; k < 200 && m.phase !== 'play'; k++) await sleep(20);
     if (b.owner) b.owner = null;
-    b.x = own === 0 ? -12 : 3012; b.y = 200; b.vx = 0; b.vy = 0; b.z = 0; b.shot = null; b.lastTouchTeam = other;
-    const snap = await waitFor(socks.p2, (x) => x.t === 's' && x.ph === PH_RESTART && x.rs, n, 3000);
-    check('a goal kick, taken by a keeper', snap && snap.rs[0] === 2 && m.players[snap.rs[2]] && m.players[snap.rs[2]].isKeeper, snap && snap.rs);
-    const back = await waitFor(socks.p2, (x) => x.t === 's' && x.ph === PH_PLAY, n, 3000);
-    check('taken within a second and a half', !!back);
+    b.x = 1500; b.y = 40; b.z = 0; b.vx = 0; b.vy = -700; b.vz = 0; b.shot = null;
+    await sleep(500);
+    check('off the side boards it stays on the ice, and play goes on', b.y > -60 && b.y < 1810 && m.phase === 'play', { y: Math.round(b.y), phase: m.phase });
+    const seen = socks.p2.got.slice(n).filter((x) => x.t === 's');
+    check('no restart phase, no rs', seen.length > 10 && !seen.some((x) => x.ph === PH_RESTART || x.rs), seen.length);
   }
 
   console.log('the ordinary room never has one');
@@ -162,44 +175,6 @@ const PH_RESTART = 8, PH_PLAY = 1;
     check('it starts as a PRO MATCH 3v3', st && st.pro === true && st.format === '3v3', st && { pro: st.pro, f: st.format });
     const r = game._roomOf('p5');
     check('on the big pitch, with the rules', r && r.pro && r.m.rules, r && r.pro);
-  }
-
-  console.log("who takes a side's throw-ins online: one of its real players, at random");
-  {
-    let n = socks.q1.got.length;
-    socks.q1.msg({ t: 'room.create', format: '2v2' });
-    const lob = await waitFor(socks.q1, (x) => x.t === 'room', n, 1000);
-    socks.q2.msg({ t: 'room.join', code: lob.code }); await sleep(50);
-    socks.q2.msg({ t: 'room.team', team: 'blue' }); await sleep(50);
-    socks.q1.msg({ t: 'room.pro', on: true }); await sleep(50);
-    n = socks.q2.got.length;
-    socks.q1.msg({ t: 'room.start' });
-    await waitFor(socks.q2, (x) => x.t === 'start', n, 2000);
-    const r = game._roomOf('q1'), m = r.m;
-    const team = r.seats.find((x) => x.userId === 'q1').team;
-    check('the two friends are on the same side', r.seats.find((x) => x.userId === 'q2').team === team, r.seats.map((x) => [x.userId, x.team]));
-    for (let i = 0; i < 200 && m.phase !== 'play'; i++) await sleep(50);
-    const takers = [];
-    const one = async () => {
-      for (let i = 0; i < 150 && m.phase !== 'play'; i++) await sleep(20);
-      const b = m.ball; if (b.owner) b.owner = null;
-      b.x = 1500; b.y = -12; b.vx = 0; b.vy = -50; b.z = 0; b.shot = null; b.lastTouchTeam = team === 'blue' ? 'red' : 'blue';
-      for (let i = 0; i < 150 && m.phase !== 'restart'; i++) await sleep(20);
-      const R = m.restart, who = R && R.taker;
-      const seat = who && r.seats.find((x) => x.player === who);
-      takers.push(!who ? 'none' : seat && seat.human ? seat.userId : 'bot');
-      if (R) R.t = 7.95; // (taken for them a moment later)
-      for (let i = 0; i < 150 && m.phase === 'restart'; i++) await sleep(20);
-    };
-    for (let k = 0; k < 14; k++) await one();
-    const a = takers.filter((x) => x === 'q1').length, c = takers.filter((x) => x === 'q2').length;
-    check("only the side's real players take them, never a fill-in", a + c === takers.length, takers);
-    check('and each of them gets some (a random one each time)', a > 0 && c > 0, { q1: a, q2: c });
-    // q2 drops out: from then on they are all q1's
-    socks.q2.close(); await sleep(50);
-    takers.length = 0;
-    for (let k = 0; k < 5; k++) await one();
-    check('a player who has dropped out is never handed one', takers.length === 5 && takers.every((x) => x === 'q1'), takers);
   }
 
   console.log(failures ? `\n${failures} FAILED` : '\nall good');
