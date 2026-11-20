@@ -1,4 +1,4 @@
-# Publishing Mini Strikers: what is done, what is left
+# Publishing Mini Pucks: what is done, what is left
 
 ## Done (live in build 100)
 - The game, the server, accounts, online play, and a privacy page at `/privacy.html`.
@@ -8,12 +8,12 @@
 - Coin packs (in-app purchases): built and tested, switched off until the stores are set up.
 - The game runs from inside an app (`API_BASE` in `js/net.js`, CORS in `server.js`) and carries its own
   copy of its font, so it makes no request to anyone but its own server.
-- **The Android app: `Desktop\Mini Strikers - Play Store\mini-strikers-1.2.1-code22.aab`**, signed with
+- **The Android app: `Desktop\Mini Pucks - Play Store\mini-pucks-1.2.1-code22.aab`**, signed with
   the upload key, ready to upload to Google Play. Built from `app/`.
 
 ## Not done
 1. The iPhone app (needs a Mac with Xcode).
-2. The store accounts. (The listing graphics are done: `Desktop/Mini Strikers - Play Store/Store pictures/`.)
+2. The store accounts. (The listing graphics are done: `Desktop/Mini Pucks - Play Store/Store pictures/`.)
    The listing words are written: `app/store-listing.md`.
 3. Store credentials for purchases (see README, "Selling coins").
 4. The Android app has been built and checked (signature, contents, manifest, and the bundled game
@@ -22,7 +22,7 @@
 
 ## The signing key. Read this.
 The `.aab` is signed with an *upload key*, kept in `C:\Users\NoahL\AndroidBuild\signing\`
-(`mini-strikers-upload.jks` and `keystore.properties`, which holds its password). It is outside
+(`mini-pucks-upload.jks` and `keystore.properties`, which holds its password). It is outside
 OneDrive and outside the project on purpose, and it is never committed.
 - **Back that folder up** somewhere safe (a USB stick, not email). Every update you upload must be
   signed with the same key.
@@ -36,8 +36,8 @@ Tools live in `C:\Users\NoahL\AndroidBuild` (JDK 21, the Android SDK, the work f
 1. Raise `versionCode` (and `versionName`) in `app/version.json`. Google refuses a versionCode it has
    already seen.
 2. `powershell -ExecutionPolicy Bypass -File app\build-android.ps1`
-3. The new file appears in `Desktop\Mini Strikers - Play Store`.
-The app id is `com.irizarrygames.ministrikers`. **It cannot be changed after the first upload**, and the
+3. The new file appears in `Desktop\Mini Pucks - Play Store`.
+The app id is `com.irizarrygames.minipucks`. **It cannot be changed after the first upload**, and the
 in-app purchase products are tied to it. Change it in `app/capacitor.config.json` before the first upload
 if the account holder wants a different one.
 
@@ -64,7 +64,7 @@ if the account holder wants a different one.
 3. **Upload the `.aab`** to a Closed testing track, add 12 or more testers (their Google accounts),
    and keep them opted in for 14 days. Then apply for production access.
 4. **Listing:** use `app/store-listing.md`. The 1024x500 feature graphic and two landscape phone screenshots
-   are in `Desktop/Mini Strikers - Play Store/Store pictures/` (made by `tools/storeart.js`). Fill in the age-rating questionnaire and the Data safety form (answers
+   are in `Desktop/Mini Pucks - Play Store/Store pictures/` (made by `tools/storeart.js`). Fill in the age-rating questionnaire and the Data safety form (answers
    are in the listing file).
 5. **Kids.** The game is for children. The adult decides whether to list it as made for kids (Apple
    Kids Category, Google Families). That means no ads or third-party tracking (there are none), a

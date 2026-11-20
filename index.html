@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#2f7bff">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
-  <title>Mini Strikers</title>
+  <title>Mini Pucks</title>
   <!-- stamped by the server as it sends this page, so the game can tell when it is out of date -->
   <script>window.BUILD = '__BUILD__';</script>
   <link rel="preload" href="fonts/LilitaOne-latin.woff2" as="font" type="font/woff2" crossorigin>
@@ -20,7 +20,7 @@
 
   <div id="splash" class="splash loading">
     <div class="splash-ball"></div>
-    <h1 id="splash-logo" class="logo splash-logo">Mini Strikers</h1>
+    <h1 id="splash-logo" class="logo splash-logo">Mini Pucks</h1>
     <div id="splash-tap" class="splash-tap">LOADING…</div>
     <div id="splash-sub" class="splash-sub" aria-live="polite"></div>
   </div>
@@ -50,7 +50,7 @@
       ro: ['SE ÎNCARCĂ…', 'Pornim imediat ce jocul s-a încărcat…', 'Încă se încarcă… conexiune lentă sau serverul se trezește. Poate dura până la un minut.', 'ATINGE PENTRU A REÎNCĂRCA', 'Jocul nu s-a încărcat cum trebuie.'],
     };
     var lang = null;
-    try { lang = localStorage.getItem('mini-strikers.lang'); } catch (e) { /* no storage */ }
+    try { lang = localStorage.getItem('mini-pucks.lang'); } catch (e) { /* no storage */ }
     if (!WORDS[lang]) {
       lang = 'en';
       var asked = navigator.languages || [navigator.language];
@@ -169,7 +169,7 @@
         <div class="coins"><span class="coin"></span><span id="coins">0</span><button id="coins-plus" class="coin-plus" aria-label="Get coins" hidden>+</button></div>
       </div>
     </div>
-    <h1 class="logo" id="logo">Mini Strikers</h1>
+    <h1 class="logo" id="logo">Mini Pucks</h1>
     <div id="home-record" class="home-record">0W · 0D · 0L</div>
     <div class="home-bl">
       <button id="btn-howto" class="howto-btn">? HOW TO PLAY</button>
@@ -200,7 +200,7 @@
   <div id="auth" class="screen auth" hidden>
     <div class="auth-card">
       <div class="auth-left">
-        <h1 class="logo auth-logo" id="auth-logo">Mini Strikers</h1>
+        <h1 class="logo auth-logo" id="auth-logo">Mini Pucks</h1>
         <button id="auth-offline" class="mid-btn auth-offline" hidden>PLAY OFFLINE</button>
         <div class="auth-tabs"><button data-auth="login" class="sel">LOG IN</button><button data-auth="signup">SIGN UP</button></div>
         <form id="auth-form" class="auth-fields" autocomplete="on">

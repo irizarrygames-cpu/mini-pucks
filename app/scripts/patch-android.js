@@ -1,4 +1,4 @@
-// Sets up the generated Android project the way Mini Strikers needs it. Safe to run again: every
+// Sets up the generated Android project the way Mini Pucks needs it. Safe to run again: every
 // change checks whether it is already made.
 //   - landscape only, full screen with the system bars hidden (swipe to bring them back)
 //   - no cloud backup of the app's data (it holds the sign-in)

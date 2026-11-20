@@ -1,10 +1,10 @@
-# Google Play listing: Mini Strikers
+# Google Play listing: Mini Pucks
 
 Paste these into Play Console. Everything here is true of the game as it is now; if the game changes, change this.
 
 ## Main store listing
 
-**App name** (30 max): `Mini Strikers`
+**App name** (30 max): `Mini Pucks`
 
 **Short description** (80 max):
 `Fast, colourful arcade football. Play solo, online or with your friends!`
@@ -12,7 +12,7 @@ Paste these into Play Console. Everything here is true of the game as it is now;
 **Full description** (4000 max):
 
 ```
-Mini Strikers is quick, colourful arcade football for everyone. Dribble, pass, shoot and tackle your way through 1v1, 2v2, 3v3 and 4v4 matches, solo or against real players from around the world.
+Mini Pucks is quick, colourful arcade football for everyone. Dribble, pass, shoot and tackle your way through 1v1, 2v2, 3v3 and 4v4 matches, solo or against real players from around the world.
 
 PLAY YOUR WAY
 - Quick Match: a fast game against a random country, with no connection needed
@@ -48,12 +48,12 @@ Play in English, Spanish, Portuguese, French, German, Italian, Dutch, Turkish, P
 **App category**: Games, Sports
 **Tags**: Sports, Football / Soccer, Arcade, Multiplayer
 **Contact email**: irizarrygames@gmail.com
-**Privacy policy**: https://mini-strikers.onrender.com/privacy.html
+**Privacy policy**: https://mini-pucks.onrender.com/privacy.html
 
 ## Graphics to upload
 - App icon 512x512: `icon-512.png` in the project folder
-- Feature graphic 1024x500: `Desktop/Mini Strikers - Play Store/Store pictures/mini-strikers-feature-graphic.png`
-- Phone screenshots (landscape, at least 2, up to 8): `mini-strikers-screenshot-1-match.png` and `mini-strikers-screenshot-2-penalties.png` in the same folder (1920x1080, 24-bit PNG). Made by `tools/storeart.js`; run it again after a big change to the look.
+- Feature graphic 1024x500: `Desktop/Mini Pucks - Play Store/Store pictures/mini-pucks-feature-graphic.png`
+- Phone screenshots (landscape, at least 2, up to 8): `mini-pucks-screenshot-1-match.png` and `mini-pucks-screenshot-2-penalties.png` in the same folder (1920x1080, 24-bit PNG). Made by `tools/storeart.js`; run it again after a big change to the look.
 
 ## App content questionnaires
 

@@ -1,4 +1,4 @@
-// Mini Strikers server. Plain Node, no required dependencies.
+// Mini Pucks server. Plain Node, no required dependencies.
 //
 //   node server.js [port]
 //
@@ -17,7 +17,7 @@ const { forgetEverywhere } = require('./server/friends');
 const iapLib = require('./server/iap');
 
 const PORT = Number(process.argv[2] || process.env.PORT || 8450);
-const BUILD = 127;
+const BUILD = 1;
 const ROOT = __dirname;
 const DATA_FILE = process.env.MS_DATA_FILE || path.join(ROOT, 'data.json');
 const PBKDF2_ITERATIONS = 150000;
@@ -61,8 +61,8 @@ function makePostgresStore(url) {
   return {
     kind: 'postgres',
     async load() {
-      await sql`CREATE TABLE IF NOT EXISTS strikers_users (id TEXT PRIMARY KEY, data JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now())`;
-      const rows = await sql`SELECT id, data FROM strikers_users`;
+      await sql`CREATE TABLE IF NOT EXISTS pucks_users (id TEXT PRIMARY KEY, data JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now())`;
+      const rows = await sql`SELECT id, data FROM pucks_users`;
       const users = {};
       for (const row of rows) users[row.id] = row.data;
       return users;
@@ -70,11 +70,11 @@ function makePostgresStore(url) {
     async write(users, changed) {
       for (const id of changed) {
         if (!users[id]) continue;
-        await sql`INSERT INTO strikers_users (id, data) VALUES (${id}, ${JSON.stringify(users[id])})
+        await sql`INSERT INTO pucks_users (id, data) VALUES (${id}, ${JSON.stringify(users[id])})
                   ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`;
       }
     },
-    async remove(id) { await sql`DELETE FROM strikers_users WHERE id = ${id}`; },
+    async remove(id) { await sql`DELETE FROM pucks_users WHERE id = ${id}`; },
   };
 }
 
@@ -184,68 +184,7 @@ function sanitizeSave(incoming, previous, club) {
 // Coins handed to a player by the game's owner. Each gift is queued once at startup (its key is
 // remembered on the account, so restarts never repeat it) and delivered the next time that
 // player's game syncs: on sign-in / opening the game, or on a save from a game that knows gifts.
-const GIFTS = [
-  { key: '2026-09-17-billion', user: 'irizarrygamez1', club: 'germany', coins: 1000000000 },
-  { key: '2026-09-22-lilotter-billion', user: 'lilotter', coins: 1000000000 },
-  { key: '2026-10-16-irizarry-billion', user: 'irizarry', coins: 1000000000 },
-  { key: '2026-10-16-irizarrygamegh-billion', user: 'irizarrygamegh', coins: 1000000000 },
-  // madeBefore: only the account that already had this name when the gift was written gets it — if
-  // the name is free and someone signs up with it later, they get nothing
-  { key: '2026-11-14-irizarry-10-trillion', user: 'irizarry', coins: 10000000000000, madeBefore: Date.UTC(2026, 10, 14, 19, 45) },
-  { key: '2026-11-14-lilotter-10-trillion', user: 'lilotter', coins: 10000000000000, madeBefore: Date.UTC(2026, 10, 14, 19, 45) },
-  // everything: every item in the game, and every season pass from now on, kept for good (ensureEverything)
-  { key: '2026-11-18-irizarrygame-10-trillion-everything', user: 'irizarrygame', coins: 10000000000000, everything: true, madeBefore: Date.UTC(2026, 10, 18, 3, 40) },
-  // passesUpTo: everything in the game as it is, season passes only up to that one (later passes are
-  // theirs to earn like anyone else)
-  { key: '2026-11-18-havertz-10-trillion-everything', user: 'havertz', coins: 10000000000000, everything: true, passesUpTo: 1, madeBefore: Date.UTC(2026, 10, 18, 21, 30) },
-  // build 127: irizarry gets what irizarrygame has: 10 trillion more, every item, every season pass for good
-  { key: '2026-11-20-irizarry-10-trillion-everything', user: 'irizarry', coins: 10000000000000, everything: true, madeBefore: Date.UTC(2026, 10, 20, 13, 35) },
-];
-// A one-time clean slate, spent the first time it runs.
-//
-// The key lives in the league record, which is the only id here no username can take and which
-// every user listing already skips. Once that record carries this key, nothing happens again.
-// Change the key to do it again; leave it alone and it stays spent.
-const WIPE_KEY = '2026-10-18-prelaunch';
-
-async function wipeEverything() {
-  // Only the real database. Every scan that seeds accounts and then boots the server would
-  // otherwise have them deleted out from under it — lbscan seeds eight and checks the
-  // leaderboard, and the wipe emptied it before the first question was asked. The live accounts
-  // are the ones this is for, and they are the ones in Postgres.
-  if (store.kind !== 'postgres') return;
-  const league = DB.users[LEAGUE_ID];
-  if (league && league.wiped === WIPE_KEY) return;            // already spent
-
-  const ids = Object.keys(DB.users);
-  // Write the marker FIRST and make sure it stuck. If saving it fails, nothing is deleted —
-  // better to not wipe at all than to wipe on every restart for ever.
-  const marker = { order: [], last: {}, wiped: WIPE_KEY, at: Date.now() };
-  DB.users[LEAGUE_ID] = marker;
-  try {
-    await store.write(DB.users, [LEAGUE_ID]);
-  } catch (e) {
-    console.error('wipe: could not save the marker, so nothing was deleted:', e.message);
-    return;
-  }
-  persisted.set(LEAGUE_ID, JSON.stringify(marker));
-
-  let gone = 0;
-  for (const id of ids) {
-    if (id === LEAGUE_ID) continue;
-    // Out of memory first, then out of the store. The file store rewrites the whole file
-    // from DB.users, so removing before deleting writes the record straight back — the last
-    // account survived the wipe when it was the other way round.
-    delete DB.users[id];
-    persisted.delete(id);
-    try { await store.remove(id); gone++; } catch (e) { console.error('wipe: could not remove ' + id + ':', e.message); }
-  }
-  tokens.clear();
-  leagueCache = null;
-  boardCache = null;
-  console.log('wipe ' + WIPE_KEY + ': removed ' + gone + ' accounts');
-}
-
+const GIFTS = [];
 function queueGifts(quiet) {
   for (const g of GIFTS) {
     const u = getUser(g.user);
@@ -971,14 +910,13 @@ for (const signal of ['SIGTERM', 'SIGINT']) {
     if (u.club !== country) { u.club = country; if (u.save) { u.save.club = country; u.save.cup = null; } leagueCache = null; saveDB(); }
   }
   // the clean slate, if its key has not been spent yet
-  await wipeEverything();
   sweepNames();
   restoreSessions();
   queueGifts();
   // an account that signs up later still gets what was meant for it
   setInterval(() => queueGifts(true), 300000).unref();
   server.listen(PORT, () => {
-    console.log(`Mini Strikers server on http://localhost:${PORT}`);
+    console.log(`Mini Pucks server on http://localhost:${PORT}`);
     console.log(`accounts: ${Object.keys(DB.users).filter((id) => id !== LEAGUE_ID).length} (storage: ${store.kind})`);
   });
 })();

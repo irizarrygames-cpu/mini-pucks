@@ -1,4 +1,4 @@
-# Mini Strikers
+# Mini Pucks
 
 Arcade soccer for phones and computers. Pick one of the top 20 countries when you sign
 up, play the bots (quick match, the cup, training) or play real people online. Every
@@ -41,7 +41,7 @@ the server reads `PORT`.
 One thing has to be typed in by hand: **`DATABASE_URL`**, a Postgres connection string
 (Neon's free plan works). It is deliberately not in the repo. Without it accounts go in
 `data.json`, which a free instance wipes whenever it restarts. The table
-(`strikers_users`) is created on first boot, so it can share the same Neon database as
+(`pucks_users`) is created on first boot, so it can share the same Neon database as
 War Prize.
 
 After a deploy, `/api/health` reports `build` (bump `BUILD` in `server.js` when you
@@ -110,7 +110,7 @@ Lag in an online match is three different things, and only some of them can be f
    region is chosen when it is created (Oregon is the default) and cannot be changed afterwards, so it
    means creating the service again in the nearest region (Virginia or Ohio for players in the eastern
    US) with the same environment variables. To keep the address the apps use
-   (`https://mini-strikers.onrender.com`), delete the old service first and give the new one the same name.
+   (`https://mini-pucks.onrender.com`), delete the old service first and give the new one the same name.
    Do this before the Android app goes to Google Play, because the address is built into the app.
    Run `node tools/wsping.js` again afterwards to see the difference.
    **Done 2026-10-23:** the service now runs in Virginia, made by hand in the dashboard (New > Web Service,

@@ -4,7 +4,7 @@
 # data.json, which a free instance wipes whenever it restarts.
 services:
   - type: web
-    name: mini-strikers
+    name: mini-pucks
     runtime: node
     plan: free
     buildCommand: npm install

@@ -86,7 +86,7 @@ const INNOCENT_HOSTS = ['scunthorpe', 'analy', 'analog', 'banal', 'canal', 'pena
 // Nobody gets to look like the game itself or like staff.
 const RESERVED = [
   'admin', 'administrator', 'moderator', 'mod', 'staff', 'owner', 'official',
-  'system', 'server', 'root', 'support', 'help', 'ministrikers', 'strikers',
+  'system', 'server', 'root', 'support', 'help', 'minipucks', 'pucks', 'ministrikers', 'strikers',
   'bot', 'robot', 'npc', 'player', 'guest', 'anonymous', 'null', 'undefined',
   'everyone', 'here',
 ];

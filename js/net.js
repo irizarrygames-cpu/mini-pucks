@@ -6,7 +6,7 @@
 // pointed at another local server with ?api=http://localhost:PORT and made to act like the app
 // with ?native=1, to try the app set-up without a phone. That only works on localhost, so a link
 // somewhere else cannot point the game at a server of its own.)
-const LIVE_SERVER = 'https://mini-strikers.onrender.com';
+const LIVE_SERVER = 'https://mini-pucks.onrender.com';
 const ON_LOCALHOST = /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
 const NATIVE = !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform())
   || (ON_LOCALHOST && /[?&]native=1\b/.test(location.search));
@@ -15,10 +15,10 @@ const API_BASE = (() => {
   if (dev && /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(dev)) return dev;
   return NATIVE ? LIVE_SERVER : '';
 })();
-const TOKEN_KEY = 'mini-strikers.token';
+const TOKEN_KEY = 'mini-pucks.token';
 // Who was last signed in on this device. The token alone does not say, and with no connection
 // there is nobody to ask — without this the game cannot find your cached save to play offline.
-const USER_KEY = 'mini-strikers.user';
+const USER_KEY = 'mini-pucks.user';
 
 const Net = {
   token: null,

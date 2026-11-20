@@ -1414,7 +1414,7 @@ const Install = {
     window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); this.event = e; this.refresh(); });
     window.addEventListener('appinstalled', () => {
       this.event = null; this.refresh();
-      UI.toast(tl('INSTALLED! LOOK FOR MINI STRIKERS ON YOUR HOME SCREEN'));
+      UI.toast(tl('INSTALLED! LOOK FOR MINI PUCKS ON YOUR HOME SCREEN'));
     });
     // Inside a store app the game's files are the app's own: there is no offline copy to keep and
     // no newer build to reload for (a new version arrives as an app update).
@@ -1516,7 +1516,7 @@ const Install = {
     }
     // no API here: show where the button they need actually is
     $('install-how').innerHTML = this.ios()
-      ? `<b>${tl('1. Tap the Share button')}</b>${tl('the square with an arrow coming out of it, at the bottom of Safari')}<b>${tl('2. Scroll down and tap "Add to Home Screen"')}</b><b>${tl('3. Tap Add')}</b>${tl('Mini Strikers lands on your home screen and opens fullscreen, like any other game.')}`
+      ? `<b>${tl('1. Tap the Share button')}</b>${tl('the square with an arrow coming out of it, at the bottom of Safari')}<b>${tl('2. Scroll down and tap "Add to Home Screen"')}</b><b>${tl('3. Tap Add')}</b>${tl('Mini Pucks lands on your home screen and opens fullscreen, like any other game.')}`
       : `<b>${tl('Open your browser menu')}</b>${tl('the three dots in the corner')}<b>${tl('Tap "Install app" or "Add to Home screen"')}</b>${tl('then confirm. The game opens fullscreen with no browser around it.')}`;
     $('install-steps').hidden = false;
   },

@@ -721,7 +721,7 @@ const Pens = {
     ctx.fillStyle = OUTLINE; ctx.fillRect(0, by - 3, L.W, 3); ctx.fillRect(0, L.gy - 3, L.W, 3);
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     const fs = L.board * 0.5;
-    const words = [st.name || 'MINI STRIKERS', st.chant || tl("LET'S GO!")];
+    const words = [st.name || 'MINI PUCKS', st.chant || tl("LET'S GO!")];
     ctx.font = `400 ${fs}px "Lilita One", system-ui, sans-serif`;
     let bx = -((t * 20) % 900);
     for (let i = 0; bx < L.W + 400; i++) {

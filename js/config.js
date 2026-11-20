@@ -1,7 +1,7 @@
 // ===== Name & identity ==============================================
 // Temporary title. Change GAME_NAME to rename every visible title.
 // STORAGE_KEY stays fixed so saved progress survives a rename.
-const GAME_NAME = tl('Mini Strikers');
+const GAME_NAME = tl('Mini Pucks');
 const GAME_SLOGANS = [tl('SMALL PLAYERS'), tl('BIG MOMENTS!'), tl('PLAY TOGETHER!'), tl('GOAL!')];
 const STORAGE_KEY = 'arcade-soccer.v1';
 

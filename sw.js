@@ -16,7 +16,7 @@
 // the name is what stops a player ending up with some files from one build and some from the
 // next: a new name means a new box, and the old one is thrown away whole on activate.
 const BUILD = '__BUILD__';
-const CACHE = 'mini-strikers-' + BUILD;
+const CACHE = 'mini-pucks-' + BUILD;
 const NET_TIMEOUT = 3500; // past this the server is asleep, so show the game and let it catch up
 
 const SHELL = [

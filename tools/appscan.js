@@ -53,7 +53,7 @@ const log = [];
   check('and so does being recognised afterwards', r.status === 200 && r.json && r.json.ok && r.json.name === 'APPSCAN1', r.json && r.json.name);
 
   console.log('nobody else is');
-  for (const origin of ['https://evil.example', 'http://mini-strikers.onrender.com.evil.example', 'null', 'capacitor://evil', 'https://localhost.evil.example', 'http://localhost']) {
+  for (const origin of ['https://evil.example', 'http://mini-pucks.onrender.com.evil.example', 'null', 'capacitor://evil', 'https://localhost.evil.example', 'http://localhost']) {
     r = await req('OPTIONS', '/api/auth/login', { origin, headers: { 'Access-Control-Request-Method': 'POST' } });
     check(`${origin}: the preflight is refused and gives no allow header`, r.status === 403 && !r.h.get('access-control-allow-origin'), { status: r.status });
   }

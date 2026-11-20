@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Mini Strikers — trailer</title>
+<title>Mini Pucks — trailer</title>
 <!-- Not part of the game. This page loads the game's own code and films it.
      Open tools/trailer.html on the dev server and press RENDER. -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -100,7 +100,7 @@
     const url = URL.createObjectURL(state.blob);
     status.textContent = `done · ${(state.blob.size / 1048576).toFixed(1)} MB · ${Math.round((performance.now() - started) / 1000)}s`;
     out.innerHTML = `<video src="${url}" controls style="width:960px"></video>
-      <p><a id="dl" href="${url}" download="mini-strikers-trailer.mp4">download the mp4</a></p>`;
+      <p><a id="dl" href="${url}" download="mini-pucks-trailer.mp4">download the mp4</a></p>`;
     window.__trailerURL = url;
   }
 

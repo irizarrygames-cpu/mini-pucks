@@ -143,9 +143,9 @@ var StoreArt = {
     Save.data.club = 'brazil';
     const made = [];
     try {
-      const m = this.match(); made.push(await this.save('mini-strikers-screenshot-1-match.png'));
-      this.pens(); made.push(await this.save('mini-strikers-screenshot-2-penalties.png'));
-      this.feature(m); made.push(await this.save('mini-strikers-feature-graphic.png'));
+      const m = this.match(); made.push(await this.save('mini-pucks-screenshot-1-match.png'));
+      this.pens(); made.push(await this.save('mini-pucks-screenshot-2-penalties.png'));
+      this.feature(m); made.push(await this.save('mini-pucks-feature-graphic.png'));
     } finally { Save.data.club = club; }
     return made;
   },

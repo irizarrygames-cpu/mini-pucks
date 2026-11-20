@@ -9,7 +9,7 @@ const tls = require('tls');
 const net = require('net');
 const crypto = require('crypto');
 
-const target = new URL(process.argv[2] || 'https://mini-strikers.onrender.com');
+const target = new URL(process.argv[2] || 'https://mini-pucks.onrender.com');
 const COUNT = Number(process.argv[3] || 20);
 const secure = target.protocol === 'https:';
 const port = Number(target.port) || (secure ? 443 : 80);

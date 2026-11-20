@@ -537,7 +537,7 @@ const GROUND_ROWS = [
 const COUNTRY_GROUNDS = {};
 for (const [id, city, kind, pattern, motif, chant] of GROUND_ROWS) COUNTRY_GROUNDS[id] = { city, kind, pattern, motif, chant };
 
-const DEFAULT_GROUND = { city: 'MINI STRIKERS PARK', kind: 'day', pattern: 'checks', motif: 'skyline', chant: "LET'S GO!" };
+const DEFAULT_GROUND = { city: 'MINI PUCKS PARK', kind: 'day', pattern: 'checks', motif: 'skyline', chant: "LET'S GO!" };
 
 // ---------------------------------------------------------------- the seasons (build 121)
 // Every ground changes with the month, on the player's own clock, the same way everywhere:

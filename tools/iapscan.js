@@ -26,7 +26,7 @@ const { PRODUCTS, IAP_DAILY_PACKS } = require('../js/products.js');
 const coinsOf = (id) => PRODUCTS.find((p) => p.id === id).coins;
 
 const STORE_PORT = 8490, GAME_PORT = 8491;
-const BUNDLE = 'com.example.ministrikers', ISSUER = 'issuer-123', KEYID = 'KEY123', PACKAGE = 'com.example.ministrikers', GMAIL = 'play@example.iam.gserviceaccount.com';
+const BUNDLE = 'com.example.minipucks', ISSUER = 'issuer-123', KEYID = 'KEY123', PACKAGE = 'com.example.minipucks', GMAIL = 'play@example.iam.gserviceaccount.com';
 const DATA = path.join(os.tmpdir(), `ms-iapscan-${process.pid}.json`);
 
 let failures = 0;

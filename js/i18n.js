@@ -28,7 +28,7 @@ const LANGS = [
 ];
 
 const I18N = {
-  KEY: 'mini-strikers.lang',
+  KEY: 'mini-pucks.lang',
   lang: 'en',
   chosen: false, // picked on this device, rather than guessed from the phone's language
   pickedNow: false, // picked since this page loaded (signing up asks once, not every time the tab is opened)

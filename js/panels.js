@@ -663,7 +663,7 @@ Object.assign(UI, {
     const note = (t) => `<p class="note">${t}</p>`;
     const st = Store.status;
     let inner;
-    if (!Store.kind) inner = note(tl('Coin packs are sold in the Mini Strikers app, from the App Store or Google Play.'));
+    if (!Store.kind) inner = note(tl('Coin packs are sold in the Mini Pucks app, from the App Store or Google Play.'));
     else if (!Net.token) inner = note(tl('Sign in to buy coins, so they follow your account to any device.')) + `<div class="coins-go"><button class="mid-btn" id="coins-signin">${tl('SIGN IN')}</button></div>`;
     else if (Net.offline) inner = note(tl('Buying needs a connection. Come back when you are online.'));
     else if (Store.sel) {

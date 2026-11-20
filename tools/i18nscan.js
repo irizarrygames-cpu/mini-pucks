@@ -66,7 +66,7 @@ function htmlKeys() {
   // the browser hands I18N.apply the text as shown: &#9656; is ▸
   const decode = (s) => s.replace(/&#(\d+);/g, (m, n) => String.fromCodePoint(+n)).replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&');
   // stand-ins the game always writes over before anyone sees them (a name, a country, a multiplier)
-  const PLACEHOLDER = new Set(['Mini Strikers', 'Street', 'STREET', 'ROCKETS', 'CLUB', 'HARD ×1.3', '+0 XP']);
+  const PLACEHOLDER = new Set(['Mini Pucks', 'Street', 'STREET', 'ROCKETS', 'CLUB', 'HARD ×1.3', '+0 XP']);
   for (const m of src.matchAll(/>([^<]+)</g)) {
     const k = decode(m[1]).replace(/\s+/g, ' ').trim();
     if (/[A-Za-z]{2,}/.test(k) && !PLACEHOLDER.has(k)) add(k);

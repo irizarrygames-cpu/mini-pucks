@@ -690,7 +690,7 @@ const Trailer = {
           g.restore();
         }
         if (k > 5.0) T.say('FREE IN YOUR BROWSER', T.W / 2, T.H / 2 + 110, 58, T.WHITE);
-        if (k > 5.6) T.say('mini-strikers.onrender.com', T.W / 2, T.H / 2 + 210, 72, T.YELLOW);
+        if (k > 5.6) T.say('mini-pucks.onrender.com', T.W / 2, T.H / 2 + 210, 72, T.YELLOW);
       }
       T.hit(k);
     });

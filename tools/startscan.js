@@ -11,7 +11,7 @@
 //                                    (these two: tap in and wait for home first; they start signed in)
 //   await SS.run('calm')             a new build never reloads the page in the middle of a match
 //   await SS.run('language')         a device that has never picked a language (load it after
-//                                    localStorage.removeItem('mini-strikers.lang')): the first tap goes straight in,
+//                                    localStorage.removeItem('mini-pucks.lang')): the first tap goes straight in,
 //                                    and SIGN UP asks first; picking the language already showing goes on to the form
 // Every other scenario picks the language showing first, so the question never stands in its way.
 // 'asleep-*' fake the server's silence inside the page (requests to /api/ never answer until the

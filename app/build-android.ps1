@@ -2,7 +2,7 @@
 #
 #   powershell -ExecutionPolicy Bypass -File app\build-android.ps1
 #
-# It builds in a folder OUTSIDE OneDrive (default C:\Users\NoahL\AndroidBuild\work) because the
+# It builds in a folder OUTSIDE OneDrive (default C:\Users\NoahL\AndroidBuild\work-pucks) because the
 # Android project and its caches are thousands of files. The small scripts in app\ are copied
 # there each time, and the game's own files come from this project, so a rebuild always picks up
 # the game as it is now.
@@ -14,7 +14,7 @@
 param([string]$Tools = 'C:\Users\NoahL\AndroidBuild')
 $ErrorActionPreference = 'Stop'
 $game = (Resolve-Path "$PSScriptRoot\..").Path
-$work = Join-Path $Tools 'work'
+$work = Join-Path $Tools 'work-pucks'   # (its own: Mini Strikers builds in 'work', Mini Dunkers in 'work-dunkers')
 $ver  = Get-Content "$PSScriptRoot\version.json" | ConvertFrom-Json
 
 foreach ($need in @("$Tools\jdk\bin\java.exe", "$Tools\sdk\platforms\android-36", "$Tools\signing\keystore.properties")) {
@@ -50,9 +50,9 @@ if ($LASTEXITCODE) { throw 'gradle build failed' }
 
 $aab = "$work\android\app\build\outputs\bundle\release\app-release.aab"
 if (-not (Test-Path $aab)) { throw 'the build finished but no .aab was produced' }
-$outDir = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Mini Strikers - Play Store'
+$outDir = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Mini Pucks - Play Store'
 New-Item -ItemType Directory -Force $outDir | Out-Null
-$out = Join-Path $outDir ("mini-strikers-{0}-code{1}.aab" -f $ver.versionName, $ver.versionCode)
+$out = Join-Path $outDir ("mini-pucks-{0}-code{1}.aab" -f $ver.versionName, $ver.versionCode)
 Copy-Item $aab $out -Force
 $hash = (Get-FileHash $out -Algorithm SHA256).Hash
 "Done: $out ({0:N1} MB)`nSHA-256: $hash" -f ((Get-Item $out).Length / 1MB)

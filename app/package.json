@@ -1,8 +1,8 @@
 {
-  "name": "mini-strikers-app",
+  "name": "mini-pucks-app",
   "private": true,
   "version": "1.0.0",
-  "description": "The Android (and later iPhone) wrapper around the Mini Strikers web game. See ../PUBLISHING.md.",
+  "description": "The Android (and later iPhone) wrapper around the Mini Pucks web game. See ../PUBLISHING.md.",
   "scripts": {
     "web": "node scripts/build-web.js",
     "sync": "node scripts/build-web.js && npx cap sync android"
