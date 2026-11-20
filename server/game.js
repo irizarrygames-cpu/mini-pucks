@@ -141,13 +141,13 @@ function createGame({ getUser, userName, saveDB, onlineRecord, isNameTaken, worl
   const friends = createFriends({ getUser, userName, saveDB, statusOf, push });
 
   // Direct friend challenges skip matchmaking, but availability is checked again on acceptance.
-  // Build 116: the challenger picks what it is — a 1v1 match, penalties, free kicks, or a PRO MATCH
+  // Build 116: the challenger picks what it is — a 1v1 match, a shootout, Top Shelf, or a PRO MATCH
   // (2v2: each of you with a fill-in, as PRO MATCH is 2v2 and up). Cup runs are never a challenge.
   const CHALLENGE_MODES = { match: { format: '1v1' }, pens: { format: 'pens' }, fk: { format: 'fk' }, pro: { format: '2v2', pro: true } };
   // (written out as msg: lines so tools/i18nscan.js finds each one to translate)
   const challengeWords = {
-    sent: (mode, n) => ({ match: { msg: `Challenged ${n} to a 1v1` }, pens: { msg: `Challenged ${n} to penalties` }, fk: { msg: `Challenged ${n} to free kicks` }, pro: { msg: `Challenged ${n} to a PRO MATCH` } })[mode].msg,
-    start: (mode, n) => ({ match: { msg: `1v1 with ${n} starting` }, pens: { msg: `Penalties with ${n} starting` }, fk: { msg: `Free kicks with ${n} starting` }, pro: { msg: `PRO MATCH with ${n} starting` } })[mode].msg,
+    sent: (mode, n) => ({ match: { msg: `Challenged ${n} to a 1v1` }, pens: { msg: `Challenged ${n} to a shootout` }, fk: { msg: `Challenged ${n} to Top Shelf` }, pro: { msg: `Challenged ${n} to a PRO MATCH` } })[mode].msg,
+    start: (mode, n) => ({ match: { msg: `1v1 with ${n} starting` }, pens: { msg: `Shootout with ${n} starting` }, fk: { msg: `Top Shelf with ${n} starting` }, pro: { msg: `PRO MATCH with ${n} starting` } })[mode].msg,
     declined: (mode, n) => ({ match: { msg: `${n} declined the 1v1 challenge` }, other: { msg: `${n} declined the challenge` } })[mode === 'match' || !mode ? 'match' : 'other'].msg,
   };
   const challenges = new Map(); // recipient -> { id, from, until, mode }

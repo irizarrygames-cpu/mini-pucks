@@ -452,7 +452,7 @@ Object.assign(UI, {
   // ---- collection: everything in the game, and how much of it is yours ----
   panel_collection(body) {
     $('modal-title').textContent = tl('COLLECTION');
-    const kinds = [['ball', tl('BALLS')], ['trail', tl('POWER TRAILS')], ['celebration', tl('CELEBRATIONS')], ['accessory', tl('ACCESSORIES')], ['skill', tl('SKILL MOVES')], ['emote', tl('EMOTES')]];
+    const kinds = [['ball', tl('PUCKS')], ['trail', tl('POWER TRAILS')], ['celebration', tl('CELEBRATIONS')], ['accessory', tl('ACCESSORIES')], ['skill', tl('SKILL MOVES')], ['emote', tl('EMOTES')]];
     let own = 0, all = 0;
     const order = ['common', 'rare', 'epic', 'legendary', 'mythic'];
     let best = null, bestRank = -1;
