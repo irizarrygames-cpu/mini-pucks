@@ -1071,8 +1071,8 @@ Object.assign(UI, {
     this.custStage();
   },
 
-  // The player on the left plays a little loop: stands there, strikes the ball away with your
-  // trail behind it, then does your celebration. Everything equipped, all at once.
+  // The player on the left plays a little loop: stickhandles, does your skill move, winds up and
+  // shoots it into the net with your trail behind it, then does your celebration. Everything equipped.
   custStage() {
     const cv = $('cust-view');
     if (!cv) return;
@@ -1100,27 +1100,42 @@ Object.assign(UI, {
   },
 
   STAGE_SKILL: 1.15,
-  STAGE_IDLE: 1.5, STAGE_KICK: 0.22, STAGE_FLY: 0.95,
+  STAGE_IDLE: 1.5, STAGE_SET: 0.42, STAGE_FLY: 0.62,
   drawStage(cv, t) {
     const g = cv.getContext('2d'), W = cv.width, H = cv.height;
     const st = Save.stadium();
-    // the home ground's own grass, mown in bands
-    const bands = 7;
-    for (let i = 0; i < bands; i++) { g.fillStyle = st.grass[i % 2][0]; g.fillRect(0, (H / bands) * i, W, H / bands + 1); }
-    g.fillStyle = 'rgba(0,0,0,0.12)'; g.fillRect(0, 0, W, H * 0.1);
     const k = Math.min(H / 108, W / 72);
-    const ground = H * 0.84, px = W * 0.4;
-    // the move comes first, then the shot, then the celebration
+    const ground = H * 0.84, px = W * 0.32;
+    // the stands behind, the glass, the boards (white, a yellow kick plate), then the ice
+    const boardTop = ground - 26 * k, boardBot = ground - 14 * k;
+    g.fillStyle = (st.stands && st.stands[0]) || '#2a2f55'; g.fillRect(0, 0, W, boardTop);
+    g.fillStyle = 'rgba(214, 236, 255, 0.3)'; g.fillRect(0, boardTop - 20 * k, W, 20 * k);
+    g.fillStyle = 'rgba(255, 255, 255, 0.6)'; for (let x = W * 0.12; x < W; x += W * 0.36) g.fillRect(x, boardTop - 20 * k, 1.5 * k, 20 * k);
+    g.fillStyle = '#f4f6fa'; g.fillRect(0, boardTop, W, boardBot - boardTop);
+    g.fillStyle = TEAMS.blue.board || TEAMS.blue.jersey; g.fillRect(0, boardTop, W, 2 * k);
+    g.fillStyle = '#f2c230'; g.fillRect(0, boardBot - 3 * k, W, 3 * k);
+    g.fillStyle = OUTLINE; g.fillRect(0, boardTop - 0.8 * k, W, 0.9 * k); g.fillRect(0, boardBot - 0.4 * k, W, 0.9 * k);
+    let y = boardBot, i = 0, h = 3 * k;
+    while (y < H) { g.fillStyle = i % 2 ? '#e4eef7' : '#edf5fb'; g.fillRect(0, y, W, h + 1); y += h; h *= 1.3; i++; }
+    g.fillStyle = '#e2343c'; g.fillRect(W * 0.86, boardBot, 1.2 * k, H - boardBot);   // the goal line
+    // the net, side on, at the right: its back first
+    const postX = W - 15 * k, netTop = ground - 34 * k, backX = W - 2 * k;
+    g.strokeStyle = 'rgba(255, 255, 255, 0.85)'; g.lineWidth = Math.max(1, 0.7 * k);
+    for (let q = 1; q < 6; q++) { const yy = netTop + (q / 6) * (ground - netTop); g.beginPath(); g.moveTo(postX, yy); g.lineTo(backX, lerp(netTop + 6 * k, ground, q / 6)); g.stroke(); }
+    for (let q = 1; q < 4; q++) { const xx = lerp(postX, backX, q / 4); g.beginPath(); g.moveTo(xx, lerp(netTop, netTop + 6 * k, q / 4)); g.lineTo(xx, ground); g.stroke(); }
+    // the loop: stickhandling, the move, the wind-up, the puck away, the celebration
     const sk = skillDef(Save.skill());
     const skillShow = sk.read ? 0 : this.STAGE_SKILL;
-    const move = this.STAGE_IDLE, kick = move + skillShow, fly = kick + this.STAGE_KICK, cele = fly + this.STAGE_FLY;
+    const move = this.STAGE_IDLE, set = move + skillShow, rel = set + this.STAGE_SET, cele = rel + this.STAGE_FLY;
     const cycle = cele + CELE_TIME + 0.4;
     const e = t % cycle;
-    const inMove = skillShow && e >= move && e < kick;
+    const inMove = skillShow && e >= move && e < set;
     const mu = inMove ? (e - move) / skillShow : 0;   // 0 to 1 through the move
     const p = this.fakePlayer(Save.look());
     p.faceX = 1; p.fx = 1; p.fy = 0.22; p.vx = 0; p.vy = 0; p.runPhase = 0;
-    p.kickT = 0; p.celebrateT = 0; p.celebKind = null;
+    p.kickT = 0; p.kickDur = 0.3; p.celebrateT = 0; p.celebKind = null; p.seed = 0;
+    p.hasBall = e < set; p.charging = e >= set && e < rel; p.chargeT = p.charging ? ((e - set) / this.STAGE_SET) * CFG.CHARGE_FULL : 0;
+    if (e >= rel && e < rel + 0.3) p.kickT = 0.3 - (e - rel);
     if (inMove) {
       // what the move does to the player, read off the same numbers the match uses
       const self = sk.self || {};
@@ -1130,38 +1145,39 @@ Object.assign(UI, {
       if (self.burst || self.dash) p.runPhase = mu * 14;
       p.vx = (self.burst || 0) * 40 * Math.sin(mu * Math.PI);
     }
-    if (e > kick && e < fly + 0.1) { p.kickT = Math.max(0, this.STAGE_KICK - (e - kick)); p.kickDur = this.STAGE_KICK; }
     if (e > cele) { p.celebrateT = Math.max(0, CELE_TIME - (e - cele)); p.celebKind = Save.celebration(); }
-    // the ball: at his feet, then away to the right with the trail behind it
-    const ballR = 3.1 * k;
-    let bx = px + 13 * k, by = ground - ballR * 0.9, pts = null;
-    if (e > fly) {
-      const u = Math.min(1, (e - fly) / this.STAGE_FLY);
-      bx = px + 13 * k + u * (W - px - 10 * k);
-      by = ground - ballR * 0.9 - Math.sin(u * Math.PI) * H * 0.22;
+    // the puck: on the blade, then away low and rising into the net
+    const x0 = px + 22 * k, y0 = ground - 1.5 * k, tx = postX + 4 * k, ty = ground - 16 * k;
+    const path = (u) => (u <= 0.75 ? [lerp(x0, tx, u / 0.75), lerp(y0, ty, u / 0.75)] : [tx + (u - 0.75) * 30 * k, lerp(ty, ground - 2 * k, (u - 0.75) / 0.25)]);
+    let bx, by, pts = null;
+    if (e < set) { const side = p.faceX >= 0 ? 1 : -1; bx = px + side * (20 + Math.sin(t * 13) * 3) * k; by = y0; }
+    else if (e < rel) { bx = px + 14 * k; by = y0; }
+    else if (e < cele) {
+      const u = Math.min(1, (e - rel) / this.STAGE_FLY);
+      [bx, by] = path(u);
       pts = [];
-      for (let i = 1; i <= 11; i++) {
-        const uu = Math.max(0, u - i * 0.035);
-        pts.push({ x: px + 13 * k + uu * (W - px - 10 * k), y: ground - ballR * 0.9 - Math.sin(uu * Math.PI) * H * 0.22, z: -CFG.BALL_R });
-      }
-    }
-    if (e > cele) { bx = -999; }
+      for (let q = 1; q <= 11; q++) { const [x, yy] = path(Math.max(0, u - q * 0.04)); pts.push({ x, y: yy, z: -CFG.BALL_R }); }
+    } else bx = -999;
     // shadows first
-    g.fillStyle = 'rgba(20, 60, 20, 0.3)';
+    g.fillStyle = 'rgba(0, 0, 0, 0.18)';
     g.beginPath(); g.ellipse(px, ground + 2, 15 * k, 5.5 * k, 0, 0, Math.PI * 2); g.fill();
-    if (bx > 0) { g.beginPath(); g.ellipse(bx, ground + 2, ballR * 1.1, ballR * 0.4, 0, 0, Math.PI * 2); g.fill(); }
-    // the power trail off the shot, then the ball
+    // the power trail off the shot, then the player, then the puck
     const prev = Game.headless; Game.headless = true;
     if (pts) {
-      const R = { S: k * 0.9, sx: (x) => x, sy: (y) => y };
+      const R = { S: k * 0.9, sx: (x) => x, sy: (yy) => yy };
       Sprites.trail(g, { trailType: Save.trail().id, trail: pts, x: bx, y: by, z: -CFG.BALL_R }, R, t);
     }
     const pose = p.celebrateT > 0 && CELE_POSES[p.celebKind] ? CELE_POSES[p.celebKind](CELE_TIME - p.celebrateT, t, p) : null;
     if (pose && CELE_MOVES[p.celebKind]) p.vx = CELE_MOVES[p.celebKind](CELE_TIME - p.celebrateT);
     if (inMove) this.drawSkillShow(g, sk, px, ground, k, mu, W, H, 'behind');
     Sprites.player(g, p, px, ground, k, t);
-    if (bx > 0) Sprites.ball(g, { x: 0, y: 0, z: 0, vx: 1, vy: 0, roll: t * 5, shot: null, owner: null, skin: Save.ball() }, bx, by, k * 1.1, t);
+    if (bx > 0) Sprites.ball(g, { x: 0, y: 0, z: 0, vx: 1, vy: 0, roll: t * 5, shot: null, owner: null, skin: Save.ball() }, bx, by, k * 0.75, t);
     if (inMove) this.drawSkillShow(g, sk, px, ground, k, mu, W, H, 'front');
+    // the net's red frame in front of everything: the front post, the bar back over the top, the back
+    g.lineCap = 'round'; g.lineJoin = 'round';
+    g.beginPath(); g.moveTo(postX, ground); g.lineTo(postX, netTop); g.quadraticCurveTo(backX, netTop, backX, netTop + 10 * k); g.lineTo(backX, ground);
+    g.strokeStyle = OUTLINE; g.lineWidth = 4.2 * k; g.stroke();
+    g.strokeStyle = '#e2343c'; g.lineWidth = 2.2 * k; g.stroke();
     Game.headless = prev;
   },
 
@@ -1173,10 +1189,10 @@ Object.assign(UI, {
     const def = skillDef(id);
     const col = def.color || '#8a90b8';
     g.clearRect(0, 0, W, H);
-    // the pitch it happens on
-    g.fillStyle = '#3fae5f'; g.fillRect(0, 0, W, H);
-    g.fillStyle = 'rgba(255,255,255,0.05)';
-    for (let i = 0; i < 4; i++) g.fillRect((W / 4) * i, 0, W / 8, H);
+    // the ice it happens on, with a line across it
+    g.fillStyle = '#e8f1f8'; g.fillRect(0, 0, W, H);
+    g.fillStyle = 'rgba(140, 168, 205, 0.25)'; for (let i = 0; i < 6; i++) g.fillRect(((i * 37) % W), 8 + i * 9, 26, 1.4);
+    g.fillStyle = '#2f6fd6'; g.fillRect(W * 0.18, 0, 5, H);
     const cx = W / 2, cy = H / 2 + 4;
     g.lineJoin = 'round'; g.lineCap = 'round';
 
@@ -1206,9 +1222,9 @@ Object.assign(UI, {
         // rings, which most of them are
         for (const [r, w] of [[27, 8], [17, 6]]) { g.strokeStyle = OUTLINE; g.lineWidth = w + 3; g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.stroke(); g.strokeStyle = col; g.lineWidth = w; g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.stroke(); }
       }
-      // the ball it all happens around
-      g.beginPath(); g.arc(cx, cy, 7, 0, Math.PI * 2); g.fillStyle = '#ffffff'; g.fill();
-      g.lineWidth = 2.5; g.strokeStyle = OUTLINE; g.stroke();
+      // the puck it all happens around
+      g.beginPath(); g.ellipse(cx, cy + 2.5, 9, 5, 0, 0, Math.PI * 2); g.fillStyle = '#121419'; g.fill(); g.lineWidth = 2.5; g.strokeStyle = OUTLINE; g.stroke();
+      g.beginPath(); g.ellipse(cx, cy, 9, 5, 0, 0, Math.PI * 2); g.fillStyle = '#2c3140'; g.fill(); g.stroke();
     }
     // the grade, as a band along the bottom
     const rar = RARITIES[def.rarity] || RARITIES.common;
@@ -1279,9 +1295,12 @@ Object.assign(UI, {
     // the shout
     if (def.say) {
       g.save();
-      g.translate(px, ground - 86 * k - ease * 8 * k);
+      // across the middle of the picture, shrunk to fit a narrow one, never off the top
+      g.translate(W / 2, Math.max(9 * k, ground - 86 * k - ease * 8 * k));
       g.textAlign = 'center'; g.textBaseline = 'middle';
       g.font = `400 ${Math.round(15 * k)}px "Lilita One", system-ui, sans-serif`;
+      const sayW = g.measureText(def.say).width + 6 * k;
+      if (sayW > W * 0.96) g.scale((W * 0.96) / sayW, (W * 0.96) / sayW);
       g.globalAlpha = Math.min(1, ease * 2.2);
       g.lineWidth = 6 * k * 0.6; g.strokeStyle = OUTLINE; g.lineJoin = 'round';
       g.strokeText(def.say, 0, 0);
