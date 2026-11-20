@@ -308,16 +308,20 @@ function updateBall(m, dt) {
       b.vx *= damp; b.vy *= damp;
       if (b.z <= 0.5) {
         const s = Math.hypot(b.vx, b.vy);
-        if (s < 45 * h + 0.5) { b.vx = 0; b.vy = 0; }
-        else { const f = (s - 45 * h) / s; b.vx *= f; b.vy *= f; }
+        if (s < 16 * h + 0.5) { b.vx = 0; b.vy = 0; }
+        else { const f = (s - 16 * h) / s; b.vx *= f; b.vy *= f; }
       }
       b.x += b.vx * h; b.y += b.vy * h;
       const hit = collideWalls(b, CFG.BALL_R, CFG.WALL_BOUNCE);
       if (hit.hit > 0) {
         b.spinT = 0;
-        if (hit.net) {
+        const inNet = hit.net && b.y > GOAL_Y1 && b.y < GOAL_Y2 && (b.x < 0 || b.x > CFG.FIELD_W) && b.x > -CFG.GOAL_D && b.x < CFG.FIELD_W + CFG.GOAL_D;
+        if (inNet) {
           b.vx *= 0.3; b.vy *= 0.3;
           if (hit.hit > 140) { b.netBulge[hit.net] = 1; Sound.net(); }
+        } else if (hit.net) {
+          if (hit.hit > 160) Sound.board(hit.hit);
+          if (b.shot && hit.hit > 300 && !b.shot.ult) b.shot = null;
         } else if (hit.post && hit.hit > 150) {
           Sound.post(); FX.doShake(4, 0.15); FX.sparks(b.x, b.y, b.z, '#ffffff', 6, 220);
           if (b.shot) Sound.ooh();

@@ -2188,23 +2188,37 @@ const Sprites = {
       this.glow(ctx, sx, sy, r * 1.9, tr.b, 0.7);
     }
     if (skin.glow) this.glow(ctx, sx, sy, r * 2.2, skin.glow, 0.45);
-    ctx.fillStyle = skin.base;
-    ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.fill();
+    // a puck: its side band first, then its top (squashed, as the rink is seen at a tilt)
+    const classic = !skin.id || skin.id === 'classic';
+    const topC = classic ? '#22252f' : skin.base, sideC = classic ? '#101219' : shadeHex(skin.base === '#ffffff' ? '#c9d2e4' : skin.base, -0.4);
+    const ry = r * 0.6, th = r * 0.46;
+    ctx.beginPath();
+    ctx.moveTo(sx + r, sy); ctx.lineTo(sx + r, sy + th);
+    ctx.ellipse(sx, sy + th, r, ry, 0, 0, Math.PI);
+    ctx.lineTo(sx - r, sy);
+    ctx.ellipse(sx, sy, r, ry, 0, Math.PI, 0, true);
+    ctx.closePath();
+    ctx.fillStyle = sideC; ctx.fill();
+    ctx.lineWidth = Math.max(1.5, 2.2 * k); ctx.strokeStyle = OUTLINE; ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.22)'; ctx.lineWidth = Math.max(0.8, r * 0.1);
+    ctx.beginPath(); ctx.ellipse(sx, sy + th * 0.5, r * 0.98, ry, 0, 0.25, Math.PI - 0.25); ctx.stroke();
     ctx.save();
-    ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.clip();
+    ctx.translate(sx, sy); ctx.scale(1, ry / r); ctx.translate(-sx, -sy);
+    ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.fillStyle = topC; ctx.fill(); ctx.clip();
     const sp = Math.hypot(b.vx, b.vy) || 1;
     const dx = b.vx / sp, dy = b.vy / sp;
     const phase = ((b.roll % (Math.PI * 2)) / (Math.PI * 2)) * 2 - 1; // -1..1
-    ctx.fillStyle = skin.patch;
-    if (!skin.noPanels) for (let j = -1; j <= 1; j++) {
-      const off = (phase + j * 1.0) * r * 1.3;
-      const cx = sx + dx * off, cy = sy + dy * off * CFG.TILT;
-      if (skin.multi) ctx.fillStyle = skin.multi[(j + 4) % 3];
-      this.pent(ctx, cx, cy, r * 0.36, b.roll * 0.3 + j);
-      for (let i = 0; i < 5; i++) {
-        const a = (i / 5) * Math.PI * 2 + b.roll * 0.3 + j;
-        if (skin.multi) ctx.fillStyle = skin.multi[(i + j + 4) % 3];
-        this.pent(ctx, cx + Math.cos(a) * r * 0.95, cy + Math.sin(a) * r * 0.95, r * 0.26, a);
+    if (classic) {
+      // the classic: a black puck with a faint printed ring
+      ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = r * 0.12;
+      ctx.beginPath(); ctx.arc(sx, sy, r * 0.62, 0, Math.PI * 2); ctx.stroke();
+    } else if (!skin.noPanels) {
+      // a two-tone top: the second colour (or three) in a centre disc that turns as the puck spins
+      if (skin.multi) {
+        for (let i = 0; i < 3; i++) { ctx.fillStyle = skin.multi[i]; ctx.beginPath(); ctx.moveTo(sx, sy); ctx.arc(sx, sy, r * 0.62, b.roll * 0.3 + (i * Math.PI * 2) / 3, b.roll * 0.3 + ((i + 1) * Math.PI * 2) / 3); ctx.closePath(); ctx.fill(); }
+      } else {
+        ctx.fillStyle = skin.patch; ctx.beginPath(); ctx.arc(sx, sy, r * 0.58, 0, Math.PI * 2); ctx.fill();
+        this.star(ctx, sx, sy, r * 0.34, skin.base);
       }
     }
     // build 121's balls: stripes that roll past, mirror tiles that catch the light, a snowflake, a leaf
@@ -2281,7 +2295,7 @@ const Sprites = {
     }
     ctx.restore();
     ctx.lineWidth = Math.max(1.5, 2.2 * k); ctx.strokeStyle = OUTLINE;
-    ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(sx, sy, r, ry, 0, 0, Math.PI * 2); ctx.stroke();
   },
 
   // What spins off a trail: one small shape, repeated along the path and fading out with it.

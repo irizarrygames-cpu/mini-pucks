@@ -502,7 +502,7 @@ const Online = {
         b.vx *= damp; b.vy *= damp;
         if (b.z <= 0.5) {
           const sp = Math.hypot(b.vx, b.vy);
-          if (sp < 45 * h + 0.5) { b.vx = 0; b.vy = 0; } else { const f = (sp - 45 * h) / sp; b.vx *= f; b.vy *= f; }
+          if (sp < 16 * h + 0.5) { b.vx = 0; b.vy = 0; } else { const f = (sp - 16 * h) / sp; b.vx *= f; b.vy *= f; }
         }
         b.x += b.vx * h; b.y += b.vy * h;
         const hit = collideWalls(b, CFG.BALL_R, CFG.WALL_BOUNCE);

@@ -909,7 +909,7 @@ const Render = {
       } else if (it.ball) {
         // an ult shot in flight is a fireball (online, the striker's pose says it is one)
         const fire = !b.owner && b.trailType === 'fire' && ((b.shot && b.shot.ult) || m.players.some((q) => q.ultShot));
-        const bsx = this.sx(b.x, b.y), bsy = this.sy(b.y, b.z + CFG.BALL_R);
+        const bsx = this.sx(b.x, b.y), bsy = this.sy(b.y, b.z + 2);   // (a puck lies on the ice)
         if (fire) { Sprites.fireTrail(ctx, b, this, t); Sprites.fireball(ctx, bsx, bsy, CFG.BALL_R * this.k(b.y), b.vx, b.vy, t); }
         else Sprites.trail(ctx, b, this, t);
         Sprites.ball(ctx, b, bsx, bsy, this.k(b.y), t);
