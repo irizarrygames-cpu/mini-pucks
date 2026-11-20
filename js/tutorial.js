@@ -15,10 +15,10 @@ const Tutorial = {
     { id: 'shoot', title: tl('SHOOT'), dur: 10, loop: 3.4 },
     { id: 'curl', title: tl('CURL IT'), dur: 9, loop: 3 },
     { id: 'skill', title: tl('SKILLS'), dur: 10, loop: 3.4 },
-    { id: 'tackle', title: tl('TACKLE'), dur: 9, loop: 3 },
+    { id: 'tackle', title: tl('CHECK'), dur: 9, loop: 3 },
     { id: 'ult', title: tl('THE ULT'), dur: 9, loop: 4.5 },
-    { id: 'penkick', title: tl('PENALTIES: TAKE ONE'), dur: 8, loop: 4 },
-    { id: 'pensave', title: tl('PENALTIES: SAVE ONE'), dur: 8, loop: 4 },
+    { id: 'penkick', title: tl('SHOOTOUT: TAKE ONE'), dur: 8, loop: 4 },
+    { id: 'pensave', title: tl('SHOOTOUT: SAVE ONE'), dur: 8, loop: 4 },
   ],
 
   // the words, with the right keys or buttons for how you are playing
@@ -27,26 +27,26 @@ const Tutorial = {
     const btn = (s) => `<span class="kc wide">${s}</span>`;
     const move = kb ? k('W') + k('A') + k('S') + k('D') : tl('the joystick');
     const say = {
-      move: kb ? tl('{0} to run. You always control the player nearest the ball.', [move])
-        : tl('Drag {0} to run. You always control the player nearest the ball.', [move]),
-      sprint: kb ? tl('Hold {0} to sprint. It empties the bar above your head, and an empty bar leaves you jogging.', [k(tl('SHIFT'))])
-        : tl('Hold {0} to run faster, or tap it to keep sprinting with your thumb free. It empties the bar above your head, and an empty bar leaves you jogging.', [btn(tl('SPRINT'))]),
-      pass: kb ? tl('{0} passes to the team-mate you are facing. Hold it for a harder ball through the gap.', [k('E')])
-        : tl('Tap {0} to the team-mate you are facing. Hold it for a harder ball through the gap.', [btn(tl('PASS'))]),
-      shoot: kb ? tl('Hold {0} to charge, let go to shoot. The longer you hold, the harder it goes.', [k(tl('SPACE'))])
-        : tl('Hold {0} to charge, let go to shoot. The longer you hold, the harder it goes.', [btn(tl('SHOOT'))]),
-      curl: kb ? tl('Steer with {0} as you let the shot go and it bends round the keeper.', [move])
-        : tl('Steer with {0} as you let the shot go and it bends round the keeper.', [move]),
-      skill: kb ? tl('{0} with a direction: spin, flick, nutmeg, Cruyff. No direction and you hop over the tackle.', [k('Q')])
-        : tl('{0} with a direction: spin, flick, nutmeg, Cruyff. No direction and you hop over the tackle.', [btn(tl('SKILL'))]),
-      tackle: kb ? tl('Without the ball, {0} slides in and takes it. Time it — a miss leaves you on the floor.', [k('F')])
-        : tl('Without the ball, {0} slides in and takes it. Time it — a miss leaves you on the floor.', [btn(tl('TACKLE'))]),
-      ult: kb ? tl('Goals, skills, assists and won tackles fill the ULT bar. Full, and {0} fires your ULT: a different kick every time, in flames, with its own cutscene.', [k(tl('SPACE'))])
-        : tl('Goals, skills, assists and won tackles fill the ULT bar. Full, and {0} fires your ULT: a different kick every time, in flames, with its own cutscene.', [btn(tl('ULT'))]),
-      penkick: kb ? tl('Aim with {0}, hold {1} for power, let go to hit it. Corners beat keepers; power alone misses.', [move, k(tl('SPACE'))])
-        : tl('Aim by dragging, hold {0} for power, let go to hit it. Corners beat keepers; power alone misses.', [btn(tl('SHOOT'))]),
-      pensave: kb ? tl('Their turn: pick a side with {0} as the ball leaves their boot. Too early and they change their mind.', [move])
-        : tl('Their turn: swipe a side as the ball leaves their boot. Too early and they change their mind.'),
+      move: kb ? tl('{0} to skate. You always control the player nearest the puck.', [move])
+        : tl('Drag {0} to skate. You always control the player nearest the puck.', [move]),
+      sprint: kb ? tl('Hold {0} to skate flat out. It empties the bar above your head, and an empty bar leaves you gliding.', [k(tl('SHIFT'))])
+        : tl('Hold {0} to skate faster, or tap it to keep sprinting with your thumb free. It empties the bar above your head, and an empty bar leaves you gliding.', [btn(tl('SPRINT'))]),
+      pass: kb ? tl('{0} passes to the team-mate you are facing. Hold it for a harder pass through the gap.', [k('E')])
+        : tl('Tap {0} to the team-mate you are facing. Hold it for a harder pass through the gap.', [btn(tl('PASS'))]),
+      shoot: kb ? tl('Hold {0} to wind up, let go to shoot. The longer you hold, the harder it goes: a full wind-up is a slapshot.', [k(tl('SPACE'))])
+        : tl('Hold {0} to wind up, let go to shoot. The longer you hold, the harder it goes: a full wind-up is a slapshot.', [btn(tl('SHOOT'))]),
+      curl: kb ? tl('Steer with {0} as you let the shot go and it bends round the goalie.', [move])
+        : tl('Steer with {0} as you let the shot go and it bends round the goalie.', [move]),
+      skill: kb ? tl('{0} with a direction: a spin, a flip, through the legs, a toe drag. No direction and you hop over the check.', [k('Q')])
+        : tl('{0} with a direction: a spin, a flip, through the legs, a toe drag. No direction and you hop over the check.', [btn(tl('SKILL'))]),
+      tackle: kb ? tl('Without the puck, {0} goes in with a check and takes it. Time it — a miss leaves you behind the play.', [k('F')])
+        : tl('Without the puck, {0} goes in with a check and takes it. Time it — a miss leaves you behind the play.', [btn(tl('CHECK'))]),
+      ult: kb ? tl('Goals, skills, assists and won checks fill the ULT bar. Full, and {0} fires your ULT: a different trick shot every time, in flames, with its own cutscene.', [k(tl('SPACE'))])
+        : tl('Goals, skills, assists and won checks fill the ULT bar. Full, and {0} fires your ULT: a different trick shot every time, in flames, with its own cutscene.', [btn(tl('ULT'))]),
+      penkick: kb ? tl('Aim with {0}, hold {1} for power, let go to shoot. Corners beat goalies; power alone misses.', [move, k(tl('SPACE'))])
+        : tl('Aim by dragging, hold {0} for power, let go to shoot. Corners beat goalies; power alone misses.', [btn(tl('SHOOT'))]),
+      pensave: kb ? tl('Their turn: pick a side with {0} as the puck leaves their stick. Too early and they change their mind.', [move])
+        : tl('Their turn: swipe a side as the puck leaves their stick. Too early and they change their mind.'),
     };
     return say[id] || '';
   },
@@ -149,17 +149,20 @@ const Tutorial = {
     if (fillPct > 0) { g.fillStyle = fill; Sprites.rr(g, x, y, Math.max(h, w * clamp(fillPct, 0, 1)), h, h / 2); g.fill(); }
   },
 
-  // the grass, striped like the pitch
+  // the ice: a cool white sheet with skate marks and a blue line across it
   turf(g, W, H) {
-    g.fillStyle = '#4fbd3b'; g.fillRect(0, 0, W, H);
-    g.fillStyle = 'rgba(255,255,255,0.05)';
-    const n = 7, sw = W / n;
-    for (let i = 0; i < n; i += 2) g.fillRect(i * sw, 0, sw, H);
+    g.fillStyle = '#eaf3fa'; g.fillRect(0, 0, W, H);
+    g.strokeStyle = 'rgba(140, 168, 205, 0.35)'; g.lineWidth = 1.2; g.lineCap = 'round';
+    for (let i = 0; i < 14; i++) {
+      const x = ((i * 97) % 100) / 100 * W, y = ((i * 53) % 100) / 100 * H, l = W * 0.08;
+      g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x + l / 2, y - 4, x + l, y + 2); g.stroke();
+    }
+    g.fillStyle = 'rgba(47, 111, 214, 0.55)'; g.fillRect(W * 0.18, 0, Math.max(4, W * 0.012), H);
   },
 
   // a goal seen from the side, facing right
   sideGoal(g, x, y, w, h) {
-    g.strokeStyle = '#ffffff'; g.lineWidth = Math.max(3, h * 0.06);
+    g.strokeStyle = '#e2343c'; g.lineWidth = Math.max(3, h * 0.06);   // a hockey net's frame is red
     g.beginPath(); g.moveTo(x, y); g.lineTo(x + w, y - h * 0.18); g.lineTo(x + w, y - h); g.lineTo(x, y - h * 0.82); g.closePath();
     g.fillStyle = 'rgba(255,255,255,0.14)'; g.fill(); g.stroke();
     g.lineWidth = 1.5; g.strokeStyle = 'rgba(255,255,255,0.55)';
@@ -173,13 +176,13 @@ const Tutorial = {
     g.strokeStyle = 'rgba(255,255,255,0.5)'; g.lineWidth = 1.5;
     for (let i = 1; i < 9; i++) { const f = i / 9; g.beginPath(); g.moveTo(x + w * f, y - h); g.lineTo(x + w * f, y); g.stroke(); }
     for (let i = 1; i < 5; i++) { const f = i / 5; g.beginPath(); g.moveTo(x, y - h * f); g.lineTo(x + w, y - h * f); g.stroke(); }
-    g.strokeStyle = '#ffffff'; g.lineWidth = Math.max(4, h * 0.075); g.lineJoin = 'round';
+    g.strokeStyle = '#e2343c'; g.lineWidth = Math.max(4, h * 0.075); g.lineJoin = 'round';
     g.beginPath(); g.moveTo(x, y); g.lineTo(x, y - h); g.lineTo(x + w, y - h); g.lineTo(x + w, y); g.stroke();
   },
 
   bal(g, x, y, z, k, t, o = {}) {
     const b = { x, y, z: z || 0, shot: o.shot || null, owner: null, trailType: o.trail || null, roll: t * 6, skin: Save.ball(), netBulge: { left: 0, right: 0 }, vx: 0, vy: 0 };
-    Sprites.ball(g, b, x, y - (z || 0), k, t);
+    Sprites.ball(g, b, x, y - (z || 0) + 3 * k, k, t);   // (a puck lies on the ice)
   },
 
   puff(g, x, y, k, n, seed) {
@@ -337,8 +340,8 @@ const Tutorial = {
     this.bal(g, bx, gy, bz, k, t);
     this.man(g, carrier, gy, k, { team: 'red', faceX: -1, fx: -1, number: 9, runPhase: t * 15, vx: -260, fallT: won ? 0.4 : 0 }, t);
     this.man(g, mx, gy, k, { faceX: 1, fx: 1, runPhase: t * 15, vx: 300, slideT: slide ? 0.3 : 0 }, t);
-    if (slide) this.label(g, tl('SLIDE!'), mx, gy - H * 0.5, Math.max(11, H * 0.085), '#ffffff');
-    if (won) this.label(g, tl('BALL WON!'), W * 0.5, H * 0.14, Math.max(13, H * 0.11), '#46d9ff');
+    if (slide) this.label(g, tl('CHECK!'), mx, gy - H * 0.5, Math.max(11, H * 0.085), '#ffffff');
+    if (won) this.label(g, tl('PUCK WON!'), W * 0.5, H * 0.14, Math.max(13, H * 0.11), '#46d9ff');
   },
 
   sc_ult(g, u, W, H, k, gy, t) {
