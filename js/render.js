@@ -136,121 +136,67 @@ const Render = {
     g.save(); g.beginPath(); g.rect(W + E + 48, topBoard - boardH, X1 - (W + E + 48), (H + M) * T + 26 - (topBoard - boardH)); g.clip();
     this.drawCrowd(g, W + E + 48, X1, topBoard - boardH, (H + M) * T + 26, rng, false, -1e9, st); g.restore();
 
-    // concrete apron around the arena
+    // the concourse round the rink
     g.fillStyle = st.apron;
     g.beginPath();
     g.rect(-E - 48, topBoard - boardH, W + 2 * E + 96, (H + M) * T + 26 - (topBoard - boardH));
     g.fill();
 
-    // grass floor of the arena (polygon incl. goal pockets)
-    const poly = [
-      [-E + C, -M], [W + E - C, -M], [W + E, -M + C], [W + E, GOAL_Y1], [W + CFG.GOAL_D, GOAL_Y1], [W + CFG.GOAL_D, GOAL_Y2], [W + E, GOAL_Y2],
-      [W + E, H + M - C], [W + E - C, H + M], [-E + C, H + M], [-E, H + M - C], [-E, GOAL_Y2], [-CFG.GOAL_D, GOAL_Y2], [-CFG.GOAL_D, GOAL_Y1], [-E, GOAL_Y1], [-E, -M + C],
-    ];
-    g.save();
-    g.beginPath(); poly.forEach(([x, y], i) => (i ? g.lineTo(x, y * T) : g.moveTo(x, y * T))); g.closePath();
-    g.clip();
-    const cols = st.grass, pattern = st.pattern || 'checks';
-    if (pattern === 'stripes' || pattern === 'hstripes') {
-      for (let i = -4; i < 50; i++) {
-        g.fillStyle = cols[(i + 40) % 2][0];
-        if (pattern === 'stripes') g.fillRect(i * 80, -200, 80.5, (H + 400) * T);
-        else g.fillRect(-300, i * 70 * T - 160, W + 600, 70 * T + 0.5);
-      }
-    } else if (pattern === 'diamond') {
-      g.fillStyle = cols[0][0]; g.fillRect(-300, -200, W + 600, (H + 400) * T);
-      g.fillStyle = cols[1][0];
-      for (let i = -3; i < Math.ceil((W + 300) / 100); i++) {
-        for (let j = -3; j < Math.ceil((H + 300) / 100); j++) {
-          const cx = i * 100, cy = j * 100;
-          g.beginPath(); g.moveTo(cx, (cy - 50) * T); g.lineTo(cx + 50, cy * T); g.lineTo(cx, (cy + 50) * T); g.lineTo(cx - 50, cy * T); g.closePath(); g.fill();
-        }
-      }
-    } else {
-      for (let i = -3; i < Math.ceil((W + 200) / 75); i++) {
-        for (let j = -2; j < Math.ceil((H + 160) / 70); j++) {
-          g.fillStyle = cols[(i + 20) % 2][(j + 20) % 2];
-          g.fillRect(i * 75, j * 70 * T, 75.5, 70 * T + 0.5);
-        }
-      }
-    }
-    g.strokeStyle = st.tuft; g.lineWidth = 2; g.lineCap = 'round';
-    for (let i = 0; i < 560; i++) {
-      const x = rng() * (W + 40) - 20, y = (rng() * (H + 40) - 20) * T;
-      if (pattern === 'grid') continue;
-      g.beginPath(); g.moveTo(x - 3, y - 3); g.lineTo(x, y); g.lineTo(x + 3, y - 4); g.stroke();
-    }
-    // goal pocket floors
-    g.fillStyle = 'rgba(20, 80, 20, 0.18)';
-    g.fillRect(W, GOAL_Y1 * T, CFG.GOAL_D, CFG.GOAL_W * T);
-    g.fillRect(-CFG.GOAL_D, GOAL_Y1 * T, CFG.GOAL_D, CFG.GOAL_W * T);
-    this.pitchDecor(g, st, rng);
+    // the ice, inside the boards
+    const rink = rinkOutline(14);
+    const rinkPath = () => { g.beginPath(); rink.forEach(([x, y], i) => (i ? g.lineTo(x, y * T) : g.moveTo(x, y * T))); g.closePath(); };
+    g.save(); rinkPath(); g.clip();
+    this.drawIce(g, st, rng);
     g.restore();
 
-    // boards: far side (vertical face), near side (strip), ends + chamfers
-    const face = (x1, y1, x2, y2, h, color, lip) => {
-      g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.lineTo(x2, y2 - h); g.lineTo(x1, y1 - h); g.closePath();
-      g.fillStyle = color; g.fill(); g.lineWidth = 2.5; g.strokeStyle = OUTLINE; g.stroke();
-      g.beginPath(); g.moveTo(x1, y1 - h); g.lineTo(x2, y2 - h); g.lineTo(x2, y2 - h + 5); g.lineTo(x1, y1 - h + 5); g.closePath();
-      g.fillStyle = lip; g.fill();
-    };
-    face(-E + C, topBoard, W / 2, topBoard, boardH, TEAMS.blue.board, TEAMS.blue.lip);
-    face(W / 2, topBoard, W + E - C, topBoard, boardH, TEAMS.red.board, TEAMS.red.lip);
-    face(-E, (-M + C) * T, -E + C, topBoard, boardH, TEAMS.blue.board, TEAMS.blue.lip);
-    face(W + E - C, topBoard, W + E, (-M + C) * T, boardH, TEAMS.red.board, TEAMS.red.lip);
-    // slogans on the far board
-    g.font = '900 17px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    // the boards seen from above all the way round (the ends and the near side), then the far side's
+    // faces standing up from the ice: white, a yellow kick plate at the foot, the glass above
+    const boardC = '#f4f6fa', kickC = '#f2c230';
+    rinkPath(); g.lineJoin = 'round';
+    g.lineWidth = 19; g.strokeStyle = OUTLINE; g.stroke();
+    g.lineWidth = 13; g.strokeStyle = boardC; g.stroke();
+    const R = Math.min(C, (H + 2 * M) / 2 - 1), straight0 = -E + R, straight1 = W + E - R;
+    for (let i = 0; i < rink.length; i++) {
+      const a = rink[i], b = rink[(i + 1) % rink.length];
+      if (!(b[0] > a[0]) || a[1] > H / 2 || b[1] > H / 2) continue;
+      const x1 = a[0], y1 = a[1] * T, x2 = b[0], y2 = b[1] * T;
+      // glass
+      g.beginPath(); g.moveTo(x1, y1 - boardH); g.lineTo(x2, y2 - boardH); g.lineTo(x2, y2 - boardH - 34); g.lineTo(x1, y1 - boardH - 34); g.closePath();
+      g.fillStyle = 'rgba(214, 236, 255, 0.3)'; g.fill();
+      g.strokeStyle = 'rgba(255, 255, 255, 0.75)'; g.lineWidth = 2;
+      g.beginPath(); g.moveTo(x1, y1 - boardH - 34); g.lineTo(x2, y2 - boardH - 34); g.stroke();
+      // the board's face
+      g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.lineTo(x2, y2 - boardH); g.lineTo(x1, y1 - boardH); g.closePath();
+      g.fillStyle = boardC; g.fill();
+      g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.lineTo(x2, y2 - 7); g.lineTo(x1, y1 - 7); g.closePath();
+      g.fillStyle = kickC; g.fill();
+      g.beginPath(); g.moveTo(x1, y1 - boardH); g.lineTo(x2, y2 - boardH); g.lineTo(x2, y2 - boardH + 5); g.lineTo(x1, y1 - boardH + 5); g.closePath();
+      g.fillStyle = (x1 + x2) / 2 < W / 2 ? TEAMS.blue.board : TEAMS.red.board; g.fill();
+      g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.lineTo(x2, y2 - boardH); g.lineTo(x1, y1 - boardH); g.closePath();
+      g.lineWidth = 2.5; g.strokeStyle = OUTLINE; g.stroke();
+    }
+    // glass panels' dividers along the far side
+    g.strokeStyle = 'rgba(255, 255, 255, 0.6)'; g.lineWidth = 2;
+    for (let x = straight0 + 60; x < straight1; x += 150) { g.beginPath(); g.moveTo(x, topBoard - boardH); g.lineTo(x, topBoard - boardH - 34); g.stroke(); }
+    // ads on the far boards: the game, the chant, the arena, in each half's team colour
+    g.font = '900 15px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
     const words = [GAME_NAME.toUpperCase(), st.chant || GAME_SLOGANS[2], st.name || GAME_SLOGANS[0]];
-    for (let i = 0; i < Math.ceil(W / 205); i++) {
-      const x = 90 + i * 205, y = topBoard - boardH / 2 + 1;
-      const s = words[i % 3];
-      g.lineWidth = 4; g.strokeStyle = OUTLINE; g.strokeText(s, x, y);
-      g.fillStyle = '#ffffff'; g.fillText(s, x, y);
-    }
-    const crown = (cx, cy, s) => {
-      g.beginPath();
-      g.moveTo(cx - 10 * s, cy + 6 * s); g.lineTo(cx - 12 * s, cy - 6 * s); g.lineTo(cx - 5 * s, cy); g.lineTo(cx, cy - 9 * s);
-      g.lineTo(cx + 5 * s, cy); g.lineTo(cx + 12 * s, cy - 6 * s); g.lineTo(cx + 10 * s, cy + 6 * s); g.closePath();
-      g.fillStyle = '#ffffff'; g.fill(); g.lineWidth = 2; g.strokeStyle = OUTLINE; g.stroke();
+    const ad = (x, y, w, h, team, s) => {
+      Sprites.rr(g, x - w / 2, y - h / 2, w, h, 3); g.fillStyle = team.board; g.fill(); g.lineWidth = 2; g.strokeStyle = OUTLINE; g.stroke();
+      g.lineWidth = 3.5; g.strokeStyle = OUTLINE; g.strokeText(s, x, y + 0.5);
+      g.fillStyle = '#ffffff'; g.fillText(s, x, y + 0.5);
     };
-    for (let i = 0; i < Math.ceil(W / 205); i++) crown(90 + i * 205 - 118, topBoard - boardH / 2 + 1, 0.9);
-    const tower = (tx) => {
-      const baseY = topBoard - boardH - 6, topY = Y0 + 34;
-      g.fillStyle = '#5b6488'; g.strokeStyle = OUTLINE; g.lineWidth = 3;
-      g.beginPath(); g.moveTo(tx - 6, baseY); g.lineTo(tx - 3, topY + 30); g.lineTo(tx + 3, topY + 30); g.lineTo(tx + 6, baseY); g.closePath(); g.fill(); g.stroke();
-      Sprites.rr(g, tx - 34, topY - 6, 68, 40, 6); g.fillStyle = '#39406a'; g.fill(); g.stroke();
-      for (let rI = 0; rI < 2; rI++) for (let cI = 0; cI < 4; cI++) {
-        g.beginPath(); g.arc(tx - 24 + cI * 16, topY + 5 + rI * 17, 6, 0, Math.PI * 2);
-        g.fillStyle = '#fff6c8'; g.fill(); g.lineWidth = 2; g.stroke();
-      }
-    };
-    tower(-190); tower(W + 190); tower(W * 0.25); tower(W * 0.75);
-    // end boards (seen from above) beside each goal
-    const endBoard = (x, ya, yb, dir, color, lip) => {
-      g.fillStyle = color; g.strokeStyle = OUTLINE; g.lineWidth = 2.5;
-      g.beginPath(); g.rect(dir < 0 ? x - 16 : x, ya * T - boardH, 16, (yb - ya) * T + boardH); g.fill(); g.stroke();
-      g.fillStyle = lip; g.fillRect(dir < 0 ? x - 16 : x, ya * T - boardH, 5 * (dir < 0 ? 1 : 1), (yb - ya) * T + boardH);
-    };
-    endBoard(-E, -M + C, GOAL_Y1, -1, TEAMS.blue.board, TEAMS.blue.lip);
-    endBoard(-E, GOAL_Y2, H + M - C, -1, TEAMS.blue.board, TEAMS.blue.lip);
-    endBoard(W + E, -M + C, GOAL_Y1, 1, TEAMS.red.board, TEAMS.red.lip);
-    endBoard(W + E, GOAL_Y2, H + M - C, 1, TEAMS.red.board, TEAMS.red.lip);
-    // near boards (front strip)
+    for (let i = 0, x = straight0 + 130; x < straight1 - 100; i++, x += 260) ad(x, topBoard - boardH / 2 - 1, 190, boardH - 13, x < W / 2 ? TEAMS.blue : TEAMS.red, words[i % 3]);
+    // the near boards: their back, seen from the camera's side, with ads along it
     const nb = (H + M) * T;
-    const strip = (x1, y1, x2, y2, color) => {
-      g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.lineTo(x2, y2 + 20); g.lineTo(x1, y1 + 20); g.closePath();
-      g.fillStyle = color; g.fill(); g.lineWidth = 2.5; g.strokeStyle = OUTLINE; g.stroke();
-    };
-    strip(-E, (H + M - C) * T, -E + C, nb, TEAMS.blue.board);
-    strip(-E + C, nb, W / 2, nb, TEAMS.blue.board);
-    strip(W / 2, nb, W + E - C, nb, TEAMS.red.board);
-    strip(W + E - C, nb, W + E, (H + M - C) * T, TEAMS.red.board);
-    g.font = '900 13px system-ui, sans-serif';
-    for (let i = 0; i < Math.ceil(W / 200); i++) {
-      const s = i % 2 ? GAME_SLOGANS[3] : GAME_NAME.toUpperCase();
-      g.lineWidth = 3.5; g.strokeStyle = OUTLINE; g.strokeText(s, 100 + i * 200, nb + 10.5);
-      g.fillStyle = '#ffffff'; g.fillText(s, 100 + i * 200, nb + 10.5);
+    for (let i = 0; i < rink.length; i++) {
+      const a = rink[i], b = rink[(i + 1) % rink.length];
+      if (!(b[0] < a[0]) || a[1] < H / 2 || b[1] < H / 2) continue;
+      g.beginPath(); g.moveTo(a[0], a[1] * T + 6); g.lineTo(b[0], b[1] * T + 6); g.lineTo(b[0], b[1] * T + 24); g.lineTo(a[0], a[1] * T + 24); g.closePath();
+      g.fillStyle = boardC; g.fill(); g.lineWidth = 2.5; g.strokeStyle = OUTLINE; g.stroke();
     }
+    g.font = '900 12px system-ui, sans-serif';
+    for (let i = 0, x = straight0 + 110; x < straight1 - 80; i++, x += 220) ad(x, nb + 15, 150, 14, x < W / 2 ? TEAMS.blue : TEAMS.red, i % 2 ? GAME_SLOGANS[3] : GAME_NAME.toUpperCase());
     this.stadiumDecor(g, st, X0, X1, topBoard, boardH, nb);
   },
 
@@ -299,7 +245,32 @@ const Render = {
     }
   },
 
-  // painted on the grass: worn goalmouths, then each stadium's weather and lights
+  // The ice: a cool white sheet, a sheen under the lights, the boards' shade along the far side, skate
+  // marks everywhere, and the two blue creases. (The lines are drawn live: drawPitchLive.)
+  drawIce(g, st, rng) {
+    const T = CFG.TILT, W = CFG.FIELD_W, H = CFG.FIELD_H, M = CFG.SIDE_M, E = CFG.END_M;
+    const night = st.kind === 'night' || st.kind === 'neon';
+    g.fillStyle = night ? '#dce8f3' : '#eaf3fa';
+    g.fillRect(-E - 60, (-M - 60) * T, W + 2 * E + 120, (H + 2 * M + 120) * T);
+    g.fillStyle = 'rgba(255, 255, 255, 0.55)';
+    for (const [x, y] of [[0.22, 0.32], [0.5, 0.5], [0.78, 0.32], [0.22, 0.72], [0.78, 0.72]]) { g.beginPath(); g.ellipse(W * x, H * y * T, 380, 220 * T, 0, 0, Math.PI * 2); g.fill(); }
+    g.fillStyle = 'rgba(110, 140, 185, 0.13)'; g.fillRect(-E - 60, -M * T, W + 2 * E + 120, 46 * T);
+    g.strokeStyle = 'rgba(140, 168, 205, 0.32)'; g.lineWidth = 1.2; g.lineCap = 'round';
+    for (let i = 0; i < 280; i++) {
+      const x = -E + rng() * (W + 2 * E), y = -M + rng() * (H + 2 * M), a = rng() * Math.PI, l = 30 + rng() * 90, bend = (rng() - 0.5) * 34;
+      g.beginPath(); g.moveTo(x, y * T);
+      g.quadraticCurveTo(x + Math.cos(a) * l / 2 + bend, (y + Math.sin(a) * l / 2) * T + bend * 0.3, x + Math.cos(a) * l, (y + Math.sin(a) * l) * T);
+      g.stroke();
+    }
+    const mk = rinkMarks();
+    g.fillStyle = 'rgba(96, 160, 255, 0.5)';
+    for (const [x, dir] of [[0, 1], [W, -1]]) {
+      g.beginPath(); g.ellipse(x, (H / 2) * T, mk.crease, mk.crease * T, 0, dir > 0 ? -Math.PI / 2 : Math.PI / 2, dir > 0 ? Math.PI / 2 : Math.PI * 1.5); g.closePath(); g.fill();
+    }
+  },
+
+  // painted on the grass: worn goalmouths, then each stadium's weather and lights (Mini Strikers'; the
+  // rink draws drawIce instead)
   pitchDecor(g, st, rng) {
     const T = CFG.TILT, W = CFG.FIELD_W, H = CFG.FIELD_H, M = CFG.SIDE_M;
     const oval = (x, y, rx, ry, color) => { g.fillStyle = color; g.beginPath(); g.ellipse(x, y * T, rx, ry * T, 0, 0, Math.PI * 2); g.fill(); };
@@ -412,6 +383,8 @@ const Render = {
   // weather and light over the whole scene. A fixed, small number of flat shapes a frame.
   // v: where to draw it (defaults to the match camera); the shop swatch passes its own.
   drawWeather(ctx, t, v) {
+    // a rink is indoors: no rain, snow, dust, leaves or birds over the ice
+    return;
     const st = (v && v.st) || Save.stadium();
     if (!st.weather && !st.extra) return;
     // Anything that moves across the SCREEN (birds, rain, snow, dust, sparkles) moves at a speed
@@ -623,11 +596,13 @@ const Render = {
     ctx.fillStyle = '#ffe14d'; ctx.fill(); ctx.lineWidth = 2 * k; ctx.strokeStyle = OUTLINE; ctx.stroke();
   },
 
-  // Pitch markings are drawn live with the perspective so they stay crisp at any zoom.
+  // The rink's markings are drawn live with the perspective so they stay crisp at any zoom: the red
+  // goal lines and centre line, the blue lines, the faceoff circles with their dots and hash marks,
+  // the neutral-zone dots, the centre circle, and the creases' red edge.
   drawPitchLive(ctx) {
-    const W = CFG.FIELD_W, H = CFG.FIELD_H;
-    ctx.strokeStyle = '#ffffff'; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-    ctx.lineWidth = Math.max(2, 5 * this.S);
+    const W = CFG.FIELD_W, H = CFG.FIELD_H, M = CFG.SIDE_M, E = CFG.END_M, S = this.S, mk = rinkMarks();
+    const RED = '#e2343c', BLUE = '#2f6fd6';
+    ctx.lineJoin = 'round'; ctx.lineCap = 'butt';
     const pt = (x, y) => [this.sx(x, y), this.sy(y, 0)];
     const poly = (pts, close) => {
       ctx.beginPath();
@@ -635,51 +610,50 @@ const Render = {
       if (close) ctx.closePath();
       ctx.stroke();
     };
-    const rect = (x, y, w, h) => poly([[x, y], [x + w, y], [x + w, y + h], [x, y + h]], true);
     const arc = (cx, cy, r, a0, a1, n) => { const pts = []; for (let i = 0; i <= n; i++) { const a = a0 + ((a1 - a0) * i) / n; pts.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]); } poly(pts, false); };
-    rect(0, 0, W, H);
-    poly([[W / 2, 0], [W / 2, H]]);
+    const dot = (x, y, r, col) => { const [a, c] = pt(x, y); ctx.fillStyle = col; ctx.beginPath(); ctx.ellipse(a, c, r * S, r * S * CFG.TILT, 0, 0, Math.PI * 2); ctx.fill(); };
+    // where the rink's edge is at x (the corners are round)
+    const R = Math.min(CFG.CHAMFER, (H + 2 * M) / 2 - 1), cx0 = -E + R, cx1 = W + E - R;
+    const span = (x) => { const d = x < cx0 ? cx0 - x : x > cx1 ? x - cx1 : 0; const cut = d > 0 ? R - Math.sqrt(Math.max(0, R * R - d * d)) : 0; return [-M + cut, H + M - cut]; };
+    // goal lines
+    ctx.strokeStyle = RED; ctx.lineWidth = Math.max(1.5, 3.2 * S);
+    for (const x of [0, W]) { const [a, b] = span(x); poly([[x, a], [x, b]]); }
+    // blue lines and the red centre line
+    ctx.lineWidth = Math.max(3, 12 * S);
+    ctx.strokeStyle = BLUE;
+    for (const x of [mk.blue, W - mk.blue]) poly([[x, -M], [x, H + M]]);
+    ctx.strokeStyle = RED; poly([[W / 2, -M], [W / 2, H + M]]);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)'; ctx.lineWidth = Math.max(1, 3 * S);
+    for (let y = -M + 30; y < H + M; y += 60) poly([[W / 2, y], [W / 2, y + 22]]);
+    // centre circle and dot
+    ctx.strokeStyle = BLUE; ctx.lineWidth = Math.max(1.5, 3.6 * S);
     arc(W / 2, H / 2, CFG.CIRCLE_R, 0, Math.PI * 2, 56);
-    const cy = H / 2, spot = CFG.BOX_D * 0.71, arcR = CFG.BOX_D * 0.47, aa = Math.acos((CFG.BOX_D - spot) / arcR);
-    ctx.fillStyle = '#ffffff';
-    for (const [x, dir] of [[0, 1], [W, -1]]) {
-      rect(dir > 0 ? 0 : W - CFG.BOX_D, cy - CFG.BOX_W / 2, CFG.BOX_D, CFG.BOX_W);
-      rect(dir > 0 ? 0 : W - CFG.SMALL_D, cy - CFG.SMALL_W / 2, CFG.SMALL_D, CFG.SMALL_W);
-      const px = x + dir * spot;
-      arc(px, cy, arcR, dir > 0 ? -aa : Math.PI - aa, dir > 0 ? aa : Math.PI + aa, 18);
-      const [sx0, sy0] = pt(px, cy);
-      ctx.beginPath(); ctx.ellipse(sx0, sy0, 5 * this.S, 4 * this.S, 0, 0, Math.PI * 2); ctx.fill();
-      if (dir > 0) { arc(0, 0, 30, 0, Math.PI / 2, 8); arc(0, H, 30, -Math.PI / 2, 0, 8); }
-      else { arc(W, 0, 30, Math.PI / 2, Math.PI, 8); arc(W, H, 30, Math.PI, Math.PI * 1.5, 8); }
+    dot(W / 2, H / 2, 8, BLUE);
+    // end-zone faceoff circles, their hash marks and dots
+    ctx.strokeStyle = RED; ctx.lineWidth = Math.max(1.5, 3.6 * S);
+    for (const x of [mk.foX, W - mk.foX]) for (const y of [H / 2 - mk.foY, H / 2 + mk.foY]) {
+      arc(x, y, mk.foR, 0, Math.PI * 2, 44);
+      for (const sx of [-1, 1]) for (const sy of [-1, 1]) poly([[x + sx * 22, y + sy * mk.foR], [x + sx * 22, y + sy * (mk.foR + 26)]]);
+      dot(x, y, 11, RED);
     }
-    const [cx0, cy0] = pt(W / 2, H / 2);
-    ctx.beginPath(); ctx.ellipse(cx0, cy0, 5 * this.S, 4 * this.S, 0, 0, Math.PI * 2); ctx.fill();
+    for (const x of [mk.nzX, W - mk.nzX]) for (const y of [H / 2 - mk.foY, H / 2 + mk.foY]) dot(x, y, 9, RED);
+    // the creases' edge
+    ctx.lineWidth = Math.max(1.2, 2.8 * S);
+    arc(0, H / 2, mk.crease, -Math.PI / 2, Math.PI / 2, 20);
+    arc(W, H / 2, mk.crease, Math.PI / 2, Math.PI * 1.5, 20);
   },
 
+  // the same markings on a still picture (the stadium thumbnail), tilted
   drawPitch(g) {
-    const T = CFG.TILT, W = CFG.FIELD_W, H = CFG.FIELD_H;
-    g.strokeStyle = '#ffffff'; g.lineWidth = 4; g.lineJoin = 'miter'; g.lineCap = 'butt';
-    const rect = (x, y, w, h) => { g.beginPath(); g.rect(x, y * T, w, h * T); g.stroke(); };
-    rect(0, 0, W, H);
-    g.beginPath(); g.moveTo(W / 2, 0); g.lineTo(W / 2, H * T); g.stroke();
+    const T = CFG.TILT, W = CFG.FIELD_W, H = CFG.FIELD_H, M = CFG.SIDE_M, mk = rinkMarks();
+    g.lineJoin = 'miter'; g.lineCap = 'butt';
+    const line = (x, col, w) => { g.strokeStyle = col; g.lineWidth = w; g.beginPath(); g.moveTo(x, -M * T); g.lineTo(x, (H + M) * T); g.stroke(); };
+    line(0, '#e2343c', 3); line(W, '#e2343c', 3);
+    line(mk.blue, '#2f6fd6', 12); line(W - mk.blue, '#2f6fd6', 12); line(W / 2, '#e2343c', 12);
+    g.strokeStyle = '#2f6fd6'; g.lineWidth = 4;
     g.beginPath(); g.ellipse(W / 2, (H / 2) * T, CFG.CIRCLE_R, CFG.CIRCLE_R * T, 0, 0, Math.PI * 2); g.stroke();
-    const cy = H / 2;
-    for (const [x, dir] of [[0, 1], [W, -1]]) {
-      rect(dir > 0 ? 0 : W - CFG.BOX_D, cy - CFG.BOX_W / 2, CFG.BOX_D, CFG.BOX_W);
-      rect(dir > 0 ? 0 : W - CFG.SMALL_D, cy - CFG.SMALL_W / 2, CFG.SMALL_D, CFG.SMALL_W);
-      const px = x + dir * 135;
-      g.fillStyle = '#ffffff';
-      g.beginPath(); g.ellipse(px, cy * T, 4, 4 * T, 0, 0, Math.PI * 2); g.fill();
-      g.beginPath();
-      g.ellipse(px, cy * T, 90, 90 * T, 0, dir > 0 ? -0.93 : Math.PI - 0.93, dir > 0 ? 0.93 : Math.PI + 0.93);
-      g.stroke();
-      for (const y of [0, H]) {
-        g.beginPath(); g.ellipse(x, y * T, 16, 16 * T, 0, 0, Math.PI * 2); g.stroke();
-      }
-    }
-    // re-fill beyond the touchline corners so the corner arcs only show inside
-    g.fillStyle = '#ffffff';
-    g.beginPath(); g.ellipse(W / 2, (H / 2) * T, 5, 5 * T, 0, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = '#e2343c';
+    for (const x of [mk.foX, W - mk.foX]) for (const y of [H / 2 - mk.foY, H / 2 + mk.foY]) { g.beginPath(); g.ellipse(x, y * T, mk.foR, mk.foR * T, 0, 0, Math.PI * 2); g.stroke(); }
   },
 
   // ---------------- camera ----------------
@@ -860,7 +834,7 @@ const Render = {
       ctx.lineCap = 'round';
       ctx.strokeStyle = OUTLINE; ctx.lineWidth = (w + 3) * S;
       ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
-      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = w * S;
+      ctx.strokeStyle = '#e2343c'; ctx.lineWidth = w * S;   // a hockey net's frame is red
       ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
     };
     ctx.lineWidth = Math.max(1, 1.3 * S);
@@ -926,7 +900,6 @@ const Render = {
     list.push({ y: b.y + 0.5, ball: true });
     list.push({ y: GOAL_Y1, goal: 'right', front: false }, { y: GOAL_Y2 + 1, goal: 'right', front: true });
     list.push({ y: GOAL_Y1, goal: 'left', front: false }, { y: GOAL_Y2 + 1, goal: 'left', front: true });
-    list.push({ y: -0.5, cx: 0 }, { y: -0.5, cx: CFG.FIELD_W }, { y: CFG.FIELD_H + 0.5, cx: 0 }, { y: CFG.FIELD_H + 0.5, cx: CFG.FIELD_W });
     list.sort((a, c) => a.y - c.y);
     for (const it of list) {
       if (it.p) {
@@ -1219,16 +1192,20 @@ const Render = {
     const W = this.W, H = this.H;
     const { mw, mh, x0, y0 } = this.minimapBox(W, H);
     this.boxes = { minimap: [x0 - 3, y0 - 3, x0 + mw + 3, y0 + mh + 3] };
-    const sx = (x) => x0 + (x / CFG.FIELD_W) * mw, sy = (y) => y0 + (y / CFG.FIELD_H) * mh;
-    ctx.globalAlpha = 0.9;
-    ctx.fillStyle = '#2f9a3c'; ctx.strokeStyle = OUTLINE; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.rect(x0 - 3, y0 - 3, mw + 6, mh + 6); ctx.fill(); ctx.stroke();
-    ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 1.5;
-    ctx.strokeRect(x0, y0, mw, mh);
-    ctx.beginPath(); ctx.moveTo(x0 + mw / 2, y0); ctx.lineTo(x0 + mw / 2, y0 + mh); ctx.stroke();
-    ctx.beginPath(); ctx.arc(x0 + mw / 2, y0 + mh / 2, mh * 0.13, 0, Math.PI * 2); ctx.stroke();
-    ctx.strokeRect(x0, sy(CFG.FIELD_H / 2 - CFG.BOX_W / 2), (CFG.BOX_D / CFG.FIELD_W) * mw, (CFG.BOX_W / CFG.FIELD_H) * mh);
-    ctx.strokeRect(x0 + mw - (CFG.BOX_D / CFG.FIELD_W) * mw, sy(CFG.FIELD_H / 2 - CFG.BOX_W / 2), (CFG.BOX_D / CFG.FIELD_W) * mw, (CFG.BOX_W / CFG.FIELD_H) * mh);
+    // the whole rink, boards to boards (behind the nets as well)
+    const E = CFG.END_M, M = CFG.SIDE_M, RW = CFG.FIELD_W + 2 * E, RH = CFG.FIELD_H + 2 * M, mk = rinkMarks();
+    const sx = (x) => x0 + ((x + E) / RW) * mw, sy = (y) => y0 + ((y + M) / RH) * mh;
+    ctx.globalAlpha = 0.92;
+    const rad = Math.min(mh / 2, (CFG.CHAMFER / RW) * mw);
+    Sprites.rr(ctx, x0 - 3, y0 - 3, mw + 6, mh + 6, rad + 3);
+    ctx.fillStyle = '#eaf3fa'; ctx.fill(); ctx.lineWidth = 3; ctx.strokeStyle = OUTLINE; ctx.stroke();
+    const vline = (x, col, w) => { ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath(); ctx.moveTo(sx(x), y0 + 1); ctx.lineTo(sx(x), y0 + mh - 1); ctx.stroke(); };
+    vline(0, '#e2343c', 1); vline(CFG.FIELD_W, '#e2343c', 1);
+    vline(mk.blue, '#2f6fd6', 2.4); vline(CFG.FIELD_W - mk.blue, '#2f6fd6', 2.4); vline(CFG.FIELD_W / 2, '#e2343c', 2.4);
+    ctx.strokeStyle = '#2f6fd6'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.arc(sx(CFG.FIELD_W / 2), sy(CFG.FIELD_H / 2), (CFG.CIRCLE_R / RW) * mw, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = '#e2343c';
+    for (const gx of [-CFG.GOAL_D, CFG.FIELD_W]) ctx.fillRect(sx(gx), sy(GOAL_Y1), (CFG.GOAL_D / RW) * mw, (CFG.GOAL_W / RH) * mh);
     ctx.globalAlpha = 1;
     // camera view box
     const halfW = W / 2 / this.S, halfH = H / 2 / this.S / CFG.TILT;
@@ -1240,7 +1217,8 @@ const Render = {
       ctx.beginPath(); ctx.arc(clamp(sx(p.x), x0, x0 + mw), clamp(sy(p.y), y0, y0 + mh), p.isHuman ? 4.5 : 3.2, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
       if (p.isHuman) { ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(sx(p.x), sy(p.y), 7, 0, Math.PI * 2); ctx.stroke(); }
     }
-    ctx.fillStyle = '#ffffff'; ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.5;
+    // the puck
+    ctx.fillStyle = '#16171d'; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.2;
     ctx.beginPath(); ctx.arc(clamp(sx(m.ball.x), x0, x0 + mw), clamp(sy(m.ball.y), y0, y0 + mh), 3, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
   },
 

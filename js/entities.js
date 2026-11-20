@@ -72,7 +72,7 @@ function sweepBallFrom(b, fromX, fromY, toX, toY) {
 
 const inField = (x, y) => x >= 0 && x <= CFG.FIELD_W && y >= 0 && y <= CFG.FIELD_H;
 // the whole ball is over a goal line, inside the mouth: it's a goal, nobody can touch it any more
-const ballOverLine = (b) => b.y > GOAL_Y1 && b.y < GOAL_Y2 && (b.x < -CFG.BALL_R || b.x > CFG.FIELD_W + CFG.BALL_R);
+const ballOverLine = (b) => b.y > GOAL_Y1 && b.y < GOAL_Y2 && ((b.x < -CFG.BALL_R && b.x > -CFG.GOAL_D) || (b.x > CFG.FIELD_W + CFG.BALL_R && b.x < CFG.FIELD_W + CFG.GOAL_D));
 const attackGoalX = (team) => (TEAMS[team].dir > 0 ? CFG.FIELD_W : 0);
 const ownGoalX = (team) => (TEAMS[team].dir > 0 ? 0 : CFG.FIELD_W);
 const otherTeam = (team) => (team === 'blue' ? 'red' : 'blue');

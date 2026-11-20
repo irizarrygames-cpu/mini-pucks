@@ -11,12 +11,12 @@ const CFG = {
   // so crossing the bigger pitch still feels arcade-fast.
   FIELD_W: 2400,
   FIELD_H: 1400,
-  SIDE_M: 40,        // side boards sit this far outside the touchlines
-  END_M: 34,         // end boards sit this far behind the goal lines
-  CHAMFER: 72,       // cut corners so the ball never dies in a corner
-  GOAL_W: 380,
-  GOAL_D: 84,
-  GOAL_H: 112,
+  SIDE_M: 40,        // side boards sit this far outside the edge of play
+  END_M: 190,        // end boards sit this far behind the goal lines: room to skate behind the net
+  CHAMFER: 300,      // the rink's rounded corners (their radius)
+  GOAL_W: 240,
+  GOAL_D: 70,
+  GOAL_H: 86,
   BOX_D: 380, BOX_W: 860,
   SMALL_D: 140, SMALL_W: 540,
   CIRCLE_R: 190,
@@ -935,35 +935,42 @@ function mulberry32(seed) {
 }
 
 // ===== Arena walls ==================================================
-// One closed polygon (boards + goal pockets) plus two stubs that close the
-// gap between each post and the end boards. Circle-vs-segment collision.
+// The boards: one closed outline, a rectangle with rounded corners (rinkOutline), and the two nets,
+// each a box standing on the ice a little way in from the end boards: two sides and a back. Players
+// and the puck can go all the way round a net; only its open front, between the posts, lets the
+// puck in. Circle-vs-segment collision, from either side of a segment.
 const WALLS = [];
 const POSTS = [];
 const ARENA_POLY = [];
+// the rink's outline, clockwise from the top-left, each rounded corner as `n` short straight pieces
+function rinkOutline(n = 10) {
+  const W = CFG.FIELD_W, H = CFG.FIELD_H, M = CFG.SIDE_M, E = CFG.END_M;
+  const R = Math.min(CFG.CHAMFER, (H + 2 * M) / 2 - 1, (W + 2 * E) / 2 - 1);
+  const x0 = -E, x1 = W + E, y0 = -M, y1 = H + M, pts = [];
+  const corner = (cx, cy, a0) => { for (let i = 0; i <= n; i++) { const a = a0 + (i / n) * (Math.PI / 2); pts.push([cx + Math.cos(a) * R, cy + Math.sin(a) * R]); } };
+  corner(x0 + R, y0 + R, Math.PI);            // top-left
+  corner(x1 - R, y0 + R, Math.PI * 1.5);      // top-right
+  corner(x1 - R, y1 - R, 0);                  // bottom-right
+  corner(x0 + R, y1 - R, Math.PI / 2);        // bottom-left
+  return pts;
+}
 function buildWalls() {
   WALLS.length = 0; POSTS.length = 0; ARENA_POLY.length = 0;
-  const W = CFG.FIELD_W, H = CFG.FIELD_H, M = CFG.SIDE_M, E = CFG.END_M, C = CFG.CHAMFER, D = CFG.GOAL_D;
-  const pts = [
-    [-E + C, -M], [W + E - C, -M], [W + E, -M + C], [W + E, GOAL_Y1],
-    [W + D, GOAL_Y1], [W + D, GOAL_Y2], [W + E, GOAL_Y2], [W + E, H + M - C],
-    [W + E - C, H + M], [-E + C, H + M], [-E, H + M - C], [-E, GOAL_Y2],
-    [-D, GOAL_Y2], [-D, GOAL_Y1], [-E, GOAL_Y1], [-E, -M + C],
-  ];
+  const W = CFG.FIELD_W, D = CFG.GOAL_D;
   const add = (ax, ay, bx, by, kind, side) => {
     const dx = bx - ax, dy = by - ay, l = Math.hypot(dx, dy);
+    if (l < 1e-6) return;
     WALLS.push({ ax, ay, bx, by, dx, dy, len2: l * l, nx: -dy / l, ny: dx / l, kind, side });
   };
+  const pts = rinkOutline();
   ARENA_POLY.push(...pts);
-  const pocket = [3, 4, 5, 11, 12, 13];
   for (let i = 0; i < pts.length; i++) {
     const a = pts[i], b = pts[(i + 1) % pts.length];
-    const side = a[0] > W / 2 ? 'right' : 'left';
-    add(a[0], a[1], b[0], b[1], pocket.includes(i) ? 'net' : 'board', side);
+    add(a[0], a[1], b[0], b[1], 'board', (a[0] + b[0]) / 2 > W / 2 ? 'right' : 'left');
   }
-  add(W, GOAL_Y1, W + E, GOAL_Y1, 'net', 'right');
-  add(W, GOAL_Y2, W + E, GOAL_Y2, 'net', 'right');
-  add(0, GOAL_Y1, -E, GOAL_Y1, 'net', 'left');
-  add(0, GOAL_Y2, -E, GOAL_Y2, 'net', 'left');
+  // the nets: a side, the back, the other side (the front, on the goal line, is open)
+  add(0, GOAL_Y1, -D, GOAL_Y1, 'net', 'left'); add(-D, GOAL_Y1, -D, GOAL_Y2, 'net', 'left'); add(-D, GOAL_Y2, 0, GOAL_Y2, 'net', 'left');
+  add(W, GOAL_Y1, W + D, GOAL_Y1, 'net', 'right'); add(W + D, GOAL_Y1, W + D, GOAL_Y2, 'net', 'right'); add(W + D, GOAL_Y2, W, GOAL_Y2, 'net', 'right');
   POSTS.push({ x: W, y: GOAL_Y1 }, { x: W, y: GOAL_Y2 }, { x: 0, y: GOAL_Y1 }, { x: 0, y: GOAL_Y2 });
 }
 buildWalls();
@@ -975,8 +982,8 @@ buildWalls();
 // The boxes, the goal and the centre circle grow with it. Offline only: the server plays every
 // online match on the normal pitch.
 const PITCHES = {
-  normal: { FIELD_W: 2400, FIELD_H: 1400, SIDE_M: 40, END_M: 34, CHAMFER: 72, GOAL_W: 380, BOX_D: 380, BOX_W: 860, SMALL_D: 140, SMALL_W: 540, CIRCLE_R: 190 },
-  pro:    { FIELD_W: 3000, FIELD_H: 1750, SIDE_M: 78, END_M: 68, CHAMFER: 44, GOAL_W: 410, BOX_D: 460, BOX_W: 1020, SMALL_D: 160, SMALL_W: 600, CIRCLE_R: 220 },
+  normal: { FIELD_W: 2400, FIELD_H: 1400, SIDE_M: 40, END_M: 190, CHAMFER: 300, GOAL_W: 240, BOX_D: 380, BOX_W: 860, SMALL_D: 140, SMALL_W: 540, CIRCLE_R: 190 },
+  pro:    { FIELD_W: 3000, FIELD_H: 1750, SIDE_M: 50, END_M: 230, CHAMFER: 360, GOAL_W: 256, BOX_D: 460, BOX_W: 1020, SMALL_D: 160, SMALL_W: 600, CIRCLE_R: 220 },
 };
 const Pitch = {
   size: 'normal',
@@ -994,7 +1001,20 @@ const Pitch = {
   },
 };
 
-// point-in-polygon (ray cast) against the arena outline, goal pockets included
+// Where the rink's markings are, from its size: the blue lines, the four end-zone faceoff circles (and
+// their dots), the neutral-zone dots and the goal crease. The game puts faceoffs on these spots.
+function rinkMarks() {
+  const W = CFG.FIELD_W, H = CFG.FIELD_H;
+  return {
+    blue: W * 0.36,                  // each blue line this far from its own goal line
+    foX: W * 0.1125, foY: H * 0.27,  // end-zone faceoff dots: out from the goal line, either side of the middle
+    foR: H * 0.12,                   // their circles
+    nzX: W * 0.36 + 70,              // neutral-zone dots, just outside each blue line
+    crease: CFG.GOAL_W * 0.4,        // the crease's radius in front of the net
+  };
+}
+
+// point-in-polygon (ray cast) against the arena outline
 function insideArena(x, y) {
   let inside = false;
   for (let i = 0, j = ARENA_POLY.length - 1; i < ARENA_POLY.length; j = i++) {

@@ -442,8 +442,9 @@ const Match = {
     const b = m.ball;
     if (b.y <= GOAL_Y1 || b.y >= GOAL_Y2) return;
     let team;
-    if (b.x < -CFG.BALL_R) team = 'red';
-    else if (b.x > CFG.FIELD_W + CFG.BALL_R) team = 'blue';
+    // (inside the net: behind it is still in play)
+    if (b.x < -CFG.BALL_R && b.x > -CFG.GOAL_D) team = 'red';
+    else if (b.x > CFG.FIELD_W + CFG.BALL_R && b.x < CFG.FIELD_W + CFG.GOAL_D) team = 'blue';
     else return;
     // Over the line is over the line. There used to be a let-off here: a keeper who had decided
     // to save got it anyway, the ball was dragged back onto the pitch and the game shouted
