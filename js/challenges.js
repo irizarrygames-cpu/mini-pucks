@@ -7,11 +7,11 @@ const MEDALS = ['bronze', 'silver', 'gold'];
 const MEDAL_COLORS = { bronze: '#c87d3a', silver: '#c9d2e4', gold: '#ffc21a' };
 const CHALLENGE_LIST = [
   { id: 'targets', name: tl('TARGET PRACTICE'), kind: 'pens', icon: 'target',
-    blurb: tl('Ten kicks. Hit the targets hanging in the goal.'), unit: tl('HIT'), cuts: [4, 6, 8], coins: [80, 150, 300] },
-  { id: 'keeper', name: tl('KEEPER MODE'), kind: 'pens', icon: 'gloves',
-    blurb: tl('Ten penalties come at you. Keep them out.'), unit: tl('SAVED'), cuts: [3, 5, 7], coins: [80, 150, 300] },
-  { id: 'gauntlet', name: tl('DRIBBLE GAUNTLET'), kind: 'match', icon: 'boot',
-    blurb: tl('Beat two defenders and their keeper. The clock is running.'), unit: tl('SEC'), lower: true, cuts: [34, 24, 16], coins: [80, 150, 300] },
+    blurb: tl('Ten shots. Hit the targets hanging in the net.'), unit: tl('HIT'), cuts: [4, 6, 8], coins: [80, 150, 300] },
+  { id: 'keeper', name: tl('GOALIE MODE'), kind: 'pens', icon: 'gloves',
+    blurb: tl('Ten shots come at you. Keep them out.'), unit: tl('SAVED'), cuts: [3, 5, 7], coins: [80, 150, 300] },
+  { id: 'gauntlet', name: tl('STICKHANDLING GAUNTLET'), kind: 'match', icon: 'boot',
+    blurb: tl('Beat two defenders and their goalie. The clock is running.'), unit: tl('SEC'), lower: true, cuts: [34, 24, 16], coins: [80, 150, 300] },
 ];
 const challengeById = (id) => CHALLENGE_LIST.find((c) => c.id === id);
 // which medal a score earns (time challenges want a LOW score)
@@ -206,7 +206,7 @@ const SkillRun = {
       p.vx = 0; p.vy = 0; p.stunT = 0; p.slideT = 0; p.slideWindT = 0;
       i++;
     }
-    if (!Game.headless) { FX.showBanner(tl('BALL LOST  +3s'), '#ff8a8e', 0.7); Sound.whistle(); }
+    if (!Game.headless) { FX.showBanner(tl('PUCK LOST  +3s'), '#ff8a8e', 0.7); Sound.whistle(); }
   },
 
   finishGauntlet(m, seconds) {
@@ -280,7 +280,7 @@ const SkillRun = {
     }
     // the scoreline at the top, where the shootout keeps its tally: name on top, score and kick under
     const big = clamp(Math.min(L.W, L.H) * 0.038, 12, 20), small = big * 0.62;
-    const score = `${P.chal.score} ${ch.unit}`, kick = tl('KICK {0}/{1}', [Math.min(P.chal.total, P.chal.kicks + 1), P.chal.total]);
+    const score = `${P.chal.score} ${ch.unit}`, kick = tl('SHOT {0}/{1}', [Math.min(P.chal.total, P.chal.kicks + 1), P.chal.total]);
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.font = `400 ${big}px "Lilita One", system-ui, sans-serif`;
     const wScore = ctx.measureText(score + '   ' + kick).width;

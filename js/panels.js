@@ -43,8 +43,8 @@ Object.assign(UI, {
       <div class="play-more">
         <button class="mode pro" data-mode="pro">
           <strong>${tl('PRO MATCH')}</strong>
-          <p>${tl('A bigger pitch with the real rules: the ball can go out for throw-ins, corners and goal kicks.')}</p>
-          <span class="tag">${tl('2V2 TO 4V4 · THROW-INS · CORNERS')}</span>
+          <p>${tl('A bigger rink with the real rules: icing, penalties and the power play, and faceoffs on the dots.')}</p>
+          <span class="tag">${tl('2V2 TO 4V4 · ICING · PENALTIES')}</span>
         </button>
         <button class="mode ranked" data-needs-net data-mode="ranked">
           <strong>${tl('RANKED')}</strong>
@@ -57,13 +57,13 @@ Object.assign(UI, {
           <span class="tag">${tl('ONLINE: {0} · BOTS: {1}', [WC_ROUNDS[wcRound], cup ? Cup.ROUNDS[cup.round] : tl('NEW CUP')])}</span>
         </button>
         <button class="mode pens" data-mode="pens">
-          <strong>${tl('PENALTY SHOOTOUT')}</strong>
-          <p>${tl('Five kicks each, then sudden death. Pick your corner, then save theirs.')}</p>
+          <strong>${tl('SHOOTOUT')}</strong>
+          <p>${tl('Five shots each, then sudden death. Pick your corner, then save theirs.')}</p>
           <span class="tag">${tl('VS {0}', [pensClub.name])}</span>
         </button>
         <button class="mode fk" data-mode="fk">
-          <strong>${tl('FREE KICKS')}</strong>
-          <p>${tl('Bend it over the wall or round it. Five each, then sudden death.')}</p>
+          <strong>${tl('TOP SHELF')}</strong>
+          <p>${tl('Shoot from the point, over the blockers or round them. Five each, then sudden death.')}</p>
           <span class="tag">${tl('VS {0} · OR ONLINE', [pensClub.name])}</span>
         </button>
         <button class="mode friendcup" data-needs-net data-mode="friendcup">
@@ -73,12 +73,12 @@ Object.assign(UI, {
         </button>
         <button class="mode chal" data-mode="challenges">
           <strong>${tl('SKILL CHALLENGES')}</strong>
-          <p>${tl('Target practice, keeper mode and a dribble gauntlet.')}</p>
+          <p>${tl('Target practice, goalie mode and a stickhandling gauntlet.')}</p>
           <span class="tag">${tl('3 TESTS')}</span>
         </button>
         <button class="mode training" data-mode="training">
           <strong>${tl('TRAINING')}</strong>
-          <p>${tl('No clock, no pressure. Practise shots, skills and tackles.')}</p>
+          <p>${tl('No clock, no pressure. Practise shots, dekes and checks.')}</p>
           <span class="tag">${tl('NO CLOCK')}</span>
         </button>
       </div>
@@ -120,19 +120,19 @@ Object.assign(UI, {
 
   // ---- PENALTY SHOOTOUT: choose local or online without leaving the game UI ----
   panel_pensmode(body) {
-    $('modal-title').textContent = tl('PENALTY SHOOTOUT');
+    $('modal-title').textContent = tl('SHOOTOUT');
     const club = this._pensClub || Clubs.random(Clubs.mine());
     body.innerHTML = `
       <div class="modes pen-choice">
         <button class="mode pens" data-pens="offline">
           <strong>${tl('OFFLINE')}</strong>
-          <p>${tl('Play five kicks each against a computer-controlled opponent.')}</p>
+          <p>${tl('Five shots each against a computer-controlled opponent.')}</p>
           <span class="tag">${tl('VS {0}', [club.name])}</span>
         </button>
         <button class="mode online" data-pens="online">
           <strong>${tl('ONLINE')}</strong>
-          <p>${tl('Kick for kick against a real opponent, live.')}</p>
-          <span class="tag">${tl('ONLINE PENALTIES')}</span>
+          <p>${tl('Shot for shot against a real opponent, live.')}</p>
+          <span class="tag">${tl('ONLINE SHOOTOUT')}</span>
         </button>
       </div>`;
     body.querySelector('[data-pens="offline"]').addEventListener('click', () => { this.tap(); Game.startMatch({ mode: 'pens', club }); });
@@ -147,7 +147,7 @@ Object.assign(UI, {
     let fmt = ['2v2', '3v3', '4v4'].includes(saved) ? saved : '2v2';
     const opp = Clubs.random(club);
     body.innerHTML = `
-      <p class="note">${tl('A bigger pitch with the real rules: the ball can go out for throw-ins, corners and goal kicks.')}</p>
+      <p class="note">${tl('A bigger rink with the real rules: icing, penalties and the power play, and faceoffs on the dots.')}</p>
       <div class="formats"><span>${tl('FORMAT')}</span>${['2v2', '3v3', '4v4'].map((f) => `<button data-pf="${f}" class="${f === fmt ? 'sel' : ''}">${f}</button>`).join('')}</div>
       ${saved === '1v1' ? `<p class="note pro-note">${tl('PRO MATCH IS 2V2 OR BIGGER')}</p>` : ''}
       <div class="modes pen-choice">
@@ -173,19 +173,19 @@ Object.assign(UI, {
 
   // ---- FREE KICKS: the same choice, for a free-kick shootout ----
   panel_fkmode(body) {
-    $('modal-title').textContent = tl('FREE KICKS');
+    $('modal-title').textContent = tl('TOP SHELF');
     const club = this._pensClub || Clubs.random(Clubs.mine());
     body.innerHTML = `
       <div class="modes pen-choice">
         <button class="mode pens fk" data-fk="offline">
           <strong>${tl('OFFLINE')}</strong>
-          <p>${tl('Five free kicks each against a computer-controlled opponent. Soft and high goes over the wall; hard goes round it.')}</p>
+          <p>${tl('Five shots each from the point against a computer-controlled opponent. Soft and high goes over the blockers; hard goes round them.')}</p>
           <span class="tag">${tl('VS {0}', [club.name])}</span>
         </button>
         <button class="mode online" data-fk="online">
           <strong>${tl('ONLINE')}</strong>
-          <p>${tl('Free kick for free kick against a real opponent, live.')}</p>
-          <span class="tag">${tl('ONLINE FREE KICKS')}</span>
+          <p>${tl('Shot for shot from the point against a real opponent, live.')}</p>
+          <span class="tag">${tl('ONLINE TOP SHELF')}</span>
         </button>
       </div>`;
     body.querySelector('[data-fk="offline"]').addEventListener('click', () => { this.tap(); Game.startMatch({ mode: 'pens', fk: true, club }); });
@@ -915,7 +915,7 @@ Object.assign(UI, {
     this._crateT = setTimeout(() => {
       if (!$('crate-result')) return;
       const rar = Crates.rarity(win.kind, win.id);
-      const kindName = { character: tl('PLAYER'), ball: tl('BALL'), trail: tl('POWER TRAIL'), celebration: tl('CELEBRATION'), accessory: tl('ACCESSORY'), skill: tl('SKILL MOVE'), emote: tl('EMOTE') }[win.kind] || tl('ITEM');
+      const kindName = { character: tl('PLAYER'), ball: tl('PUCK'), trail: tl('POWER TRAIL'), celebration: tl('CELEBRATION'), accessory: tl('ACCESSORY'), skill: tl('SKILL MOVE'), emote: tl('EMOTE') }[win.kind] || tl('ITEM');
       $('crate-result').innerHTML = `<span class="got" style="--r:${RARITIES[rar].color}">${RARITIES[rar].name}</span>
         <b>${Crates.name(win.kind, win.id)}</b><em>${tl('{0} · NEW', [kindName])}</em>`;
       $('crate-result').hidden = false;
@@ -974,11 +974,11 @@ Object.assign(UI, {
   },
 
   // ---- customize: your player on the left, everything you can put on them on the right ----
-  CUST_TABS: [['character', tl('PLAYER')], ['skill', tl('SKILL MOVE')], ['ball', tl('BALL')], ['accessory', tl('ACCESSORIES')], ['celebration', tl('CELEBRATION')], ['trail', tl('POWER TRAIL')], ['emote', tl('EMOTES')]],
+  CUST_TABS: [['character', tl('PLAYER')], ['skill', tl('SKILL MOVE')], ['ball', tl('PUCK')], ['accessory', tl('ACCESSORIES')], ['celebration', tl('CELEBRATION')], ['trail', tl('POWER TRAIL')], ['emote', tl('EMOTES')]],
   CUST_NOTES: {
-    character: tl('Your own player: the haircut, the colours and the build. The kit is your team\'s. To make them better, spend coins on STATS.'),
+    character: tl('Your own player: the haircut, the colours and the build. The jersey is your team\'s. To make them better, spend coins on STATS.'),
     skill: tl('What your SKILL button does. Carry one and it is that move every time, aimed wherever you are pointing.'),
-    ball: tl('The match ball in every game you play.'),
+    ball: tl('The puck in every game you play.'),
     accessory: tl('Wear as many as you like, all at once: tap one to put it on, tap it again to take it off. Online, everyone sees them.'),
     celebration: tl('Score and the camera zooms in on you doing this. Everyone in the match sees it.'),
     trail: tl('Shown on power shots. Fill the meter around SHOOT, then fully charge.'),
@@ -1441,16 +1441,16 @@ Object.assign(UI, {
         <li>${tl('{0} move (arrows work too)', [k(tl('WASD'), 1)])}</li>
         <li>${tl('{0} hold to sprint', [k(tl('SHIFT'), 1)])}</li>
         <li>${tl('{0} hold to charge, release to shoot', [k(tl('SPACE'), 1)])}</li>
-        <li>${tl('{0} pass &nbsp; {1} skill &nbsp; {2} tackle', [k('E'), k('Q'), k('F')])}</li>
+        <li>${tl('{0} pass &nbsp; {1} skill &nbsp; {2} check', [k('E'), k('Q'), k('F')])}</li>
         <li>${tl('{0} shoot &nbsp; {1} pass &nbsp; {2} skill', [k(tl('LMB'), 1), k(tl('RMB'), 1), k(tl('MMB'), 1)])}</li>
         <li>${tl('{0} pause', [k(tl('ESC'), 1)])}</li>
       </ul></div>
-      <div><h3>${tl('SKILLS &amp; TACKLES')}</h3><ul>
-        <li>${tl('Skill + no direction: HOP (jumps tackles)')}</li>
-        <li>${tl('Skill + forward: nutmeg / flick / burst')}</li>
+      <div><h3>${tl('SKILLS &amp; CHECKS')}</h3><ul>
+        <li>${tl('Skill + no direction: HOP (jumps checks)')}</li>
+        <li>${tl('Skill + forward: through the legs / flip / burst')}</li>
         <li>${tl('Skill + sideways: SPIN · backward: CRUYFF')}</li>
-        <li>${tl('Any skill makes tackles miss for a moment')}</li>
-        <li>${tl('TACKLE near the carrier to lunge and steal it')}</li>
+        <li>${tl('Any skill makes checks miss for a moment')}</li>
+        <li>${tl('CHECK near the carrier to knock it loose and steal it')}</li>
         <li>${tl('Sprint drains stamina — empty means wait')}</li>
         <li>${tl('Phone: tap SPRINT to keep sprinting, tap again to stop')}</li>
       </ul></div>
@@ -1491,7 +1491,7 @@ Object.assign(UI, {
     $('modal-title').textContent = tl('PROFILE');
     const d = Save.data, c = d.career, ch = Save.character(), lv = Levels.info(d.xp || 0);
     const winPct = d.matches ? Math.round((d.wins / d.matches) * 100) : 0;
-    const stats = [[tl('MATCHES'), d.matches], [tl('WINS'), d.wins], [tl('GOALS'), d.goals], [tl('ASSISTS'), c.assists], [tl('TACKLES'), c.tackles], [tl('SKILLS'), c.skills],
+    const stats = [[tl('MATCHES'), d.matches], [tl('WINS'), d.wins], [tl('GOALS'), d.goals], [tl('ASSISTS'), c.assists], [tl('CHECKS'), c.tackles], [tl('SKILLS'), c.skills],
       [tl('DODGES'), c.dodges], [tl('POWER GOALS'), c.powerGoals], [tl('HAT-TRICKS'), c.hattricks], [tl('CLEAN SHEETS'), c.cleanSheets], [tl('BEST STREAK'), c.bestStreak], [tl('ONLINE WINS'), c.onlineWins || 0]];
     const rank = (a) => (Achievements.ready(a) ? 0 : Achievements.claimed(a) ? 2 : 1);
     const list = ACHIEVEMENTS.slice().sort((a, b) => rank(a) - rank(b) || Achievements.progress(b) / b.goal - Achievements.progress(a) / a.goal);

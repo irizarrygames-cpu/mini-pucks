@@ -110,7 +110,7 @@ Object.assign(UI, {
       <small class="cc-sig-kick">${tl('SIGNED!')}</small>
       <canvas width="180" height="180"></canvas>
       <strong>${tl('WELCOME TO {0}!', [I18N.upper(club.name)])}</strong>
-      <p>${tl('You wear their kit and play at their ground in every mode, and the World Cup is the Champions Cup now.')}</p>
+      <p>${tl('You wear their jersey and play at their arena in every mode, and the World Cup is the Champions Cup now.')}</p>
       <div class="cc-pay big"><span><b>+${s.goal}</b><small>${tl('PER GOAL')}</small></span><span><b>+${s.assist}</b><small>${tl('PER ASSIST')}</small></span></div>
       <div class="gate-btns"><button class="big-btn green" data-go>${tl("LET'S GO")}</button></div>
     </div></div>`;
@@ -208,7 +208,7 @@ Object.assign(UI, {
         <li>${tl('Every mode works for your club, and the World Cup is the Champions Cup.')}</li>
         <li>${tl('One player, all yours: change the look, and spend coins on stats.')}</li>
         <li>${tl('Wear as many accessories as you like, all at once.')}</li>
-        <li>${tl('Your ULT is a different kick every time, in flames: volley, bicycle kick, backflip kick or scorpion kick.')}</li>
+        <li>${tl('Your ULT is a different trick shot every time, in flames: a one-timer, a spin-o-rama, a lacrosse goal or one between the legs.')}</li>
       </ul>
       ${refund ? `<p class="cc-refund">${tl('There are no characters to buy any more, so every coin you spent on them is back: +{0} COINS', [fmtCoins(refund)])}</p>` : ''}
       <div class="gate-btns"><button class="mid-btn" data-later>${tl('LATER')}</button><button class="mid-btn green" data-go>${tl('SEE THE OFFERS')}</button></div>

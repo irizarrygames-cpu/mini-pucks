@@ -179,10 +179,10 @@ const UI = {
 
   // rotating control tips while training
   TIPS: {
-    touch: [tl('Drag the joystick to move · hold SPRINT to run faster'), tl('Hold SHOOT to charge, release to shoot'), tl('Push the joystick sideways while shooting to curl it'), tl('SKILL with no direction = HOP over a tackle'),
-      tl('SKILL toward a defender = nutmeg or flick'), tl('No ball? TACKLE near the carrier to steal it'), tl('Fill the ring around SHOOT, then fully charge = POWER SHOT'), tl('Tap PASS when a teammate has it to call for the ball'), tl('Hold PASS for a harder through ball · full charge lofts it')],
-    kb: [tl('WASD to move · hold SHIFT to sprint'), tl('Hold SPACE to charge, release to shoot'), tl('Hold A or D while shooting to curl it'), tl('Q with no direction = HOP over a tackle'),
-      tl('Q toward a defender = nutmeg or flick'), tl('No ball? F near the carrier to tackle'), tl('Fill the power meter, then fully charge = POWER SHOT'), tl('E passes to the teammate you face'), tl('Hold E for a harder through ball · full charge lofts it')],
+    touch: [tl('Drag the joystick to move · hold SPRINT to run faster'), tl('Hold SHOOT to charge, release to shoot'), tl('Push the joystick sideways while shooting to curl it'), tl('SKILL with no direction = HOP over a check'),
+      tl('SKILL toward a defender = through the legs or a flip'), tl('No puck? CHECK near the carrier to steal it'), tl('Fill the ring around SHOOT, then fully charge = POWER SHOT'), tl('Tap PASS when a teammate has it to call for the puck'), tl('Hold PASS for a harder pass · full charge saucers it')],
+    kb: [tl('WASD to move · hold SHIFT to sprint'), tl('Hold SPACE to charge, release to shoot'), tl('Hold A or D while shooting to curl it'), tl('Q with no direction = HOP over a check'),
+      tl('Q toward a defender = through the legs or a flip'), tl('No puck? F near the carrier to check'), tl('Fill the power meter, then fully charge = POWER SHOT'), tl('E passes to the teammate you face'), tl('Hold E for a harder pass · full charge saucers it')],
   },
   tickTips(dt) {
     const m = Game.match, show = !!(m && m.training && Game.state === 'match' && m.phase !== 'replay');
@@ -713,7 +713,7 @@ const UI = {
   showQueue(msg) {
     this.closeAll();
     $('queue').hidden = false;
-    $('q-format').textContent = msg.format === 'ranked' ? tl('RANKED · 1v1') : msg.wc !== null && msg.wc !== undefined ? `${msg.cup === 'cc' ? tl('CHAMPIONS CUP') : msg.format === 'pens' ? tl('PENALTY WORLD CUP') : tl('WORLD CUP')} · ${WC_ROUNDS[msg.wc]}${msg.format === 'pens' ? '' : ` · ${msg.format}`}` : tl('ONLINE · {0}', [msg.format === 'fk' ? tl('FREE KICKS') : msg.format === 'pens' ? tl('PENALTIES') : String(msg.format).startsWith('pro/') ? `${tl('PRO MATCH')} ${String(msg.format).slice(4)}` : msg.format]);
+    $('q-format').textContent = msg.format === 'ranked' ? tl('RANKED · 1v1') : msg.wc !== null && msg.wc !== undefined ? `${msg.cup === 'cc' ? tl('CHAMPIONS CUP') : msg.format === 'pens' ? tl('SHOOTOUT WORLD CUP') : tl('WORLD CUP')} · ${WC_ROUNDS[msg.wc]}${msg.format === 'pens' ? '' : ` · ${msg.format}`}` : tl('ONLINE · {0}', [msg.format === 'fk' ? tl('TOP SHELF') : msg.format === 'pens' ? tl('SHOOTOUT') : String(msg.format).startsWith('pro/') ? `${tl('PRO MATCH')} ${String(msg.format).slice(4)}` : msg.format]);
     $('q-dots').innerHTML = '<i></i><i></i><i></i>';
     this._queueT = 0;
     $('q-note').textContent = tl('Searching… 0:00');
@@ -759,7 +759,7 @@ const UI = {
     $('lb-pro').textContent = pro ? tl('PRO MATCH · ON') : tl('PRO MATCH · OFF');
     $('lb-pro').classList.toggle('on', pro);
     $('lb-pro-note').hidden = !pro || msg.isHost; // (the host has the button that says so)
-    $('lb-pro-note').textContent = `${tl('PRO MATCH')}: ${tl('A bigger pitch with the real rules: the ball can go out for throw-ins, corners and goal kicks.')}`;
+    $('lb-pro-note').textContent = `${tl('PRO MATCH')}: ${tl('A bigger rink with the real rules: icing, penalties and the power play, and faceoffs on the dots.')}`;
   },
   hideLobby() { $('lobby').hidden = true; },
 
@@ -866,7 +866,7 @@ const UI = {
   // ---- match intro card ----
   showIntro(m, startsIn) {
     const cup = m.mode === 'cup' ? Cup.state() : null;
-    $('intro-stage').textContent = m.pens ? (m.pens.fk ? tl('FREE KICKS · 5 EACH, OVER OR ROUND THE WALL') : tl('PENALTY SHOOTOUT · 5 KICKS EACH')) : m.net ? (m.ranked ? tl('RANKED · 1v1') : m.fcup ? tl('FRIEND CUP · {0}', [CUP_ROUND_NAMES[m.fcup.of - 1 - m.fcup.round] || tl('CUP')]) : m.wc !== null && m.wc !== undefined ? (m.cupKind === 'cc' ? tl('CHAMPIONS CUP · {0} · {1}', [WC_ROUNDS[m.wc], m.format]) : tl('WORLD CUP · {0} · {1}', [WC_ROUNDS[m.wc], m.format])) : tl('ONLINE · {0}', [m.rules ? `${tl('PRO MATCH')} ${m.format}` : m.format])) : m.training ? tl('TRAINING · NO CLOCK') : (cup ? (Cup.champions() ? tl('CHAMPIONS CUP · {0}', [Cup.ROUNDS[cup.round]]) : tl('CUP · {0}', [Cup.ROUNDS[cup.round]])) : m.rules ? tl('PRO MATCH') : tl('QUICK MATCH')) + ` · ${m.format}`;
+    $('intro-stage').textContent = m.pens ? (m.pens.fk ? tl('TOP SHELF · 5 EACH, OVER OR ROUND THE BLOCKERS') : tl('SHOOTOUT · 5 SHOTS EACH')) : m.net ? (m.ranked ? tl('RANKED · 1v1') : m.fcup ? tl('FRIEND CUP · {0}', [CUP_ROUND_NAMES[m.fcup.of - 1 - m.fcup.round] || tl('CUP')]) : m.wc !== null && m.wc !== undefined ? (m.cupKind === 'cc' ? tl('CHAMPIONS CUP · {0} · {1}', [WC_ROUNDS[m.wc], m.format]) : tl('WORLD CUP · {0} · {1}', [WC_ROUNDS[m.wc], m.format])) : tl('ONLINE · {0}', [m.rules ? `${tl('PRO MATCH')} ${m.format}` : m.format])) : m.training ? tl('TRAINING · NO CLOCK') : (cup ? (Cup.champions() ? tl('CHAMPIONS CUP · {0}', [Cup.ROUNDS[cup.round]]) : tl('CUP · {0}', [Cup.ROUNDS[cup.round]])) : m.rules ? tl('PRO MATCH') : tl('QUICK MATCH')) + ` · ${m.format}`;
     $('intro-go').hidden = !!m.net;
     // what this match pays on top: the weekend, or the win streak a win here would make
     const ib = $('intro-bonus'), streak = Save.data.career.streak || 0, next = Bonus.of(streak + 1);
@@ -1147,24 +1147,24 @@ const UI = {
       [tl('SCORED'), m.score.blue, m.score.red],
       [tl('MISSED'), pk.blue.length - m.score.blue - m.pens.theirSaves, pk.red.length - m.score.red - m.pens.saves],
       [tl('SAVES'), m.pens.saves, m.pens.theirSaves],
-      [tl('KICKS'), pk.blue.length, pk.red.length],
+      [tl('SHOTS'), pk.blue.length, pk.red.length],
     ] : [
       [tl('GOALS'), m.score.blue, m.score.red],
       [tl('POSS %'), pb, 100 - pb],
       [tl('SHOTS'), m.stats.blue.shots, m.stats.red.shots],
       [tl('PASSES'), m.stats.blue.passes, m.stats.red.passes],
-      [tl('TACKLES'), m.stats.blue.tackles || 0, m.stats.red.tackles || 0],
+      [tl('CHECKS'), m.stats.blue.tackles || 0, m.stats.red.tackles || 0],
       [tl('SAVES'), m.stats.blue.saves, m.stats.red.saves],
     ];
     $('r-stats').innerHTML = rows.map(([k, a, b]) =>
       `<div class="r-row"><b class="${a > b ? 'lead' : ''}">${a}</b><span>${k}</span><b class="${b > a ? 'lead' : ''}">${b}</b></div>`).join('');
     const h = m.human.stats;
-    $('r-you').innerHTML = pens ? `<span><b>${h.goals}</b> ${tl('of {0} penalties scored', [h.shots])}</span><span><b>${m.pens.saves}</b> ${tl('saves')}</span>`
-      : `<span><b>${h.goals}</b> ${tl('goals')}</span><span><b>${h.shots}</b> ${tl('shots')}</span><span><b>${h.tackles}</b> ${tl('tackles')}</span><span><b>${h.skills}</b> ${tl('skills')}</span>`;
+    $('r-you').innerHTML = pens ? `<span><b>${h.goals}</b> ${tl('of {0} shootout shots scored', [h.shots])}</span><span><b>${m.pens.saves}</b> ${tl('saves')}</span>`
+      : `<span><b>${h.goals}</b> ${tl('goals')}</span><span><b>${h.shots}</b> ${tl('shots')}</span><span><b>${h.tackles}</b> ${tl('checks')}</span><span><b>${h.skills}</b> ${tl('skills')}</span>`;
     const mvp = r.mvp;
     const mvpName = mvp.isHuman ? tl('YOU') : `${TEAMS[mvp.team].name} #${mvp.number}${mvp.isKeeper ? ' ' + tl('(GK)') : ''}`;
     const s = mvp.stats;
-    const line = mvp.isKeeper ? tl('{0} saves', [s.saves]) : pens ? tl('{0} penalties · {1} saves', [s.goals, m.pens.saves]) : tl('{0} G · {1} A · {2} tackles', [s.goals, s.assists, s.tackles]);
+    const line = mvp.isKeeper ? tl('{0} saves', [s.saves]) : pens ? tl('{0} shots · {1} saves', [s.goals, m.pens.saves]) : tl('{0} G · {1} A · {2} checks', [s.goals, s.assists, s.tackles]);
     $('r-mvp').innerHTML = `<canvas id="r-mvp-canvas" width="84" height="84"></canvas><div><small>${tl('MVP')}</small><strong>${mvpName}</strong><em>${line}</em></div>`;
     this.portrait($('r-mvp-canvas'), mvp.look, mvp.team, mvp.isKeeper, mvp.number);
     $('r-challenges').innerHTML = this.challengeList(m) + this.wagesLine(pay, pens);
@@ -1283,14 +1283,14 @@ const UI = {
     const rows = [
       [tl('GOALS'), mine, theirs], [tl('POSS %'), poss, 100 - poss],
       [tl('SHOTS'), S[side].shots || 0, S[other].shots || 0], [tl('PASSES'), S[side].passes || 0, S[other].passes || 0],
-      [tl('TACKLES'), S[side].tackles || 0, S[other].tackles || 0], [tl('SAVES'), S[side].saves || 0, S[other].saves || 0],
+      [tl('CHECKS'), S[side].tackles || 0, S[other].tackles || 0], [tl('SAVES'), S[side].saves || 0, S[other].saves || 0],
     ];
     $('r-stats').innerHTML = rows.map(([k, a, b]) => `<div class="r-row"><b class="${a > b ? 'lead' : ''}">${a}</b><span>${k}</span><b class="${b > a ? 'lead' : ''}">${b}</b></div>`).join('');
-    $('r-you').innerHTML = `<span><b>${st.goals}</b> ${tl('goals')}</span><span><b>${st.assists}</b> ${tl('assists')}</span><span><b>${st.tackles}</b> ${tl('tackles')}</span><span><b>${st.skills}</b> ${tl('skills')}</span>`;
+    $('r-you').innerHTML = `<span><b>${st.goals}</b> ${tl('goals')}</span><span><b>${st.assists}</b> ${tl('assists')}</span><span><b>${st.tackles}</b> ${tl('checks')}</span><span><b>${st.skills}</b> ${tl('skills')}</span>`;
     const mvp = msg.mvp, mvpPlayer = m.players[mvp.index];
     const mvpName = mvp.index === msg.you ? tl('YOU') : mvp.keeper ? tl('{0} GK', [(mvp.team === side ? TEAMS.blue : TEAMS.red).name]) : mvp.name;
     const ms = mvp.stats || {};
-    $('r-mvp').innerHTML = `<canvas id="r-mvp-canvas" width="84" height="84"></canvas><div><small>${tl('MVP')}</small><strong>${mvpName}</strong><em>${mvp.keeper ? tl('{0} saves', [ms.saves || 0]) : tl('{0} G · {1} A · {2} tackles', [ms.goals || 0, ms.assists || 0, ms.tackles || 0])}</em></div>`;
+    $('r-mvp').innerHTML = `<canvas id="r-mvp-canvas" width="84" height="84"></canvas><div><small>${tl('MVP')}</small><strong>${mvpName}</strong><em>${mvp.keeper ? tl('{0} saves', [ms.saves || 0]) : tl('{0} G · {1} A · {2} checks', [ms.goals || 0, ms.assists || 0, ms.tackles || 0])}</em></div>`;
     if (mvpPlayer) this.portrait($('r-mvp-canvas'), mvpPlayer.look, mvpPlayer.team, mvpPlayer.isKeeper, mvpPlayer.number);
     const club = Clubs.mine();
     const lg = msg.league;
@@ -1380,7 +1380,7 @@ const UI = {
     if (!Clubs.clubMode()) return '';
     if (!pay) return `<li class="wages over"><i></i><span>${tl('CONTRACT OVER · SIGN A NEW OFFER TO GET PAID')}</span></li>`;
     const fk = !!(Game.match && Game.match.pens && Game.match.pens.fk);
-    const what = pens ? (fk ? tl('WAGES · FREE KICKS {0} × {1}', [pay.goals, pay.goalRate]) : tl('WAGES · PENALTIES {0} × {1}', [pay.goals, pay.goalRate])) : tl('WAGES · GOALS {0} × {1} · ASSISTS {2} × {3}', [pay.goals, pay.goalRate, pay.assists, pay.assistRate]);
+    const what = pens ? (fk ? tl('WAGES · TOP SHELF {0} × {1}', [pay.goals, pay.goalRate]) : tl('WAGES · SHOOTOUT {0} × {1}', [pay.goals, pay.goalRate])) : tl('WAGES · GOALS {0} × {1} · ASSISTS {2} × {3}', [pay.goals, pay.goalRate, pay.assists, pay.assistRate]);
     return `<li class="wages ${pay.coins ? 'done' : ''}"><i></i><span>${what}</span><b><span class="coin"></span>${pay.coins}</b></li>`;
   },
 

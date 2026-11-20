@@ -320,7 +320,7 @@ const Tutorial = {
     this.man(g, defX, gy, k, { team: 'red', faceX: -1, fx: -1, number: 5, stunT: past ? 0.3 : 0, runPhase: t * 8, vx: past ? 0 : -40 }, t);
     this.bal(g, x + 12 * k, gy - side * 0.4, 0, k, t);
     this.man(g, x, gy - side, k, { faceX: 1, fx: 1, runPhase: t * 16, vx: 240, hopT: hop, skill: trick ? 'spin' : null }, t);
-    if (trick || past) this.label(g, tl('NUTMEG!'), defX, gy - H * 0.62, Math.max(12, H * 0.1), '#ffe14d');
+    if (trick || past) this.label(g, tl('THROUGH THE LEGS!'), defX, gy - H * 0.62, Math.max(12, H * 0.1), '#ffe14d');
   },
 
   sc_tackle(g, u, W, H, k, gy, t) {

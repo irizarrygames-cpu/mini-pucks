@@ -591,7 +591,7 @@ function ultShot(m, p) {
   p.stats.shots++; m.stats[p.team].shots++;
   m.slowmo = 0.45;
   if (!Game.headless) {
-    const names = { volley: tl('VOLLEY!'), bicycle: tl('BICYCLE KICK!'), backflip: tl('BACKFLIP KICK!'), scorpion: tl('SCORPION KICK!') };
+    const names = { volley: tl('ONE-TIMER!'), bicycle: tl('SPIN-O-RAMA!'), backflip: tl('LACROSSE GOAL!'), scorpion: tl('BETWEEN THE LEGS!') };
     for (let i = 0; i < 7; i++) FX.sparks(b.x, b.y, 8, FIRE_COLS[i % 3], 7, 300 + i * 40, 0.5);
     FX.burst(b.x, b.y, 10, '#fff6c8', 58, 0.35);
     FX.ring(b.x, b.y, FIRE_COLS[1], 10, 90, 0.4, 6);
@@ -1101,7 +1101,7 @@ function performSkill(m, p, ix, iy) {
       front.noPickupT = 0.6; front.stunT = 0.35;
       p.burstT = 0.6; p.noPickupT = 0.22; p.dodgeT = 0.3;
       b.lastTouchTeam = p.team; b.lastPass = null;
-      say(tl('NUTMEG!'), '#ff8af0');
+      say(tl('THROUGH THE LEGS!'), '#ff8af0');
       if (p.isHuman) { m.flags.nutmeg = true; m.flags.nutmegs = (m.flags.nutmegs || 0) + 1; }
       Sound.ooh();
       addMeter(m, p, 8);

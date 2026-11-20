@@ -400,8 +400,8 @@ const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&':
 // each of you gets a fill-in teammate, as PRO MATCH is 2v2 and up). Cup runs are never a challenge.
 const CHALLENGE_MODES = ['match', 'pens', 'fk', 'pro'];
 function challengeWhat(mode, upper) {
-  if (mode === 'pens') return upper ? tl('CHALLENGED YOU TO PENALTIES') : tl('challenged you to penalties');
-  if (mode === 'fk') return upper ? tl('CHALLENGED YOU TO FREE KICKS') : tl('challenged you to free kicks');
+  if (mode === 'pens') return upper ? tl('CHALLENGED YOU TO A SHOOTOUT') : tl('challenged you to a shootout');
+  if (mode === 'fk') return upper ? tl('CHALLENGED YOU TO TOP SHELF') : tl('challenged you to Top Shelf');
   if (mode === 'pro') return upper ? tl('CHALLENGED YOU TO A PRO MATCH') : tl('challenged you to a PRO MATCH');
   return upper ? tl('CHALLENGED YOU TO A 1V1') : tl('challenged you to a 1v1');
 }
@@ -416,8 +416,8 @@ Object.assign(UI, {
       <p class="note">${tl('What do you want to play against {0}?', [esc(name)])}</p>
       <div class="modes pen-choice chal-choice">
         ${card('match', 'quick', tl('1V1 MATCH'), tl('ONLINE · {0}', ['1v1']))}
-        ${card('pens', 'pens', tl('PENALTY SHOOTOUT'), tl('ONLINE PENALTIES'))}
-        ${card('fk', 'pens fk', tl('FREE KICKS'), tl('FREE KICKS · 5 EACH, OVER OR ROUND THE WALL'))}
+        ${card('pens', 'pens', tl('SHOOTOUT'), tl('ONLINE SHOOTOUT'))}
+        ${card('fk', 'pens fk', tl('TOP SHELF'), tl('TOP SHELF · 5 EACH, OVER OR ROUND THE BLOCKERS'))}
         ${card('pro', 'pro', tl('PRO MATCH'), tl('2V2: YOU EACH GET A TEAMMATE'))}
       </div>
       <div class="cup-foot"><button class="mid-btn" data-back>${tl('BACK')}</button></div>`;
@@ -482,7 +482,7 @@ Object.assign(UI, {
       ${rows || `<p class="note fr-empty">${S.loaded ? tl('No friends yet. Ask your mates for their username and add them here.') : tl('Connecting…')}</p>`}
       ${sent ? `<h3 class="fr-h">${tl('SENT')}</h3>${sent}` : ''}
       ${S.blocked.length ? `<h3 class="fr-h">${tl('BLOCKED · {0}', [S.blocked.length])}</h3>${S.blocked.map((b) => `<div class="fr-row blocked"><b>${esc(b.name)}</b><small>${tl('BLOCKED')}</small><button class="mid-btn" data-unblock="${esc(b.name)}">${tl('UNBLOCK')}</button></div>`).join('')}` : ''}
-      <p class="note fr-foot">${tl('Challenge an online friend to a 1v1, penalties, free kicks or a PRO MATCH, invite them to your party to play on the same team, or run a cup between the lot of you. Only the quick chat lines can be sent in a match. Tap a name to block that player or report their name.')}</p>
+      <p class="note fr-foot">${tl('Challenge an online friend to a 1v1, a shootout, Top Shelf or a PRO MATCH, invite them to your party to play on the same team, or run a cup between the lot of you. Only the quick chat lines can be sent in a match. Tap a name to block that player or report their name.')}</p>
       <div class="fr-safety"><button type="button" class="auth-guest" data-findplayer>${tl('BLOCK OR REPORT A PLAYER')}</button></div>`;
     body.querySelectorAll('canvas[data-club]').forEach((cv) => this.flagBadge(cv, Clubs.get(cv.dataset.club)));
     const input = body.querySelector('#fr-name');

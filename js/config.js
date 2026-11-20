@@ -404,18 +404,18 @@ const CHARACTERS = [
   // Jacob: LILOTTER and irizarrygamez1 only. The card shows his own six stats; the three that
   // mean anything on the pitch (pace, ball control, crossing) are what he actually plays at.
   { id: 'jacob', name: 'Jacob', rarity: 'oneofone', only: ['lilotter', 'irizarrygamez1'], thin: 0.55, ovr: 98,
-    stats: [[tl('SKINNY'), 99], [tl('PACE'), 21], [tl('BALL CONTROL'), 67], [tl('YAP'), 200], [tl('EXCUSES'), 200], [tl('CROSSING'), 0]],
+    stats: [[tl('SKINNY'), 99], [tl('PACE'), 21], [tl('PUCK CONTROL'), 67], [tl('YAP'), 200], [tl('EXCUSES'), 200], [tl('CROSSING'), 0]],
     r: { spd: 98, sht: 98, pas: 96, ctl: 99, def: 92 }, hair: 'anime', hairColor: '#3aa0ff', skin: '#f6cfa6', anime: true, mewing: true },
   // LILOTTER's own one-of-one. The card says 200; the attributes below are the ceiling the game
   // has (ratingAttr caps at 99, so 200 there would play exactly the same and only break the maths).
   { id: 'flow', name: 'Flow', rarity: 'oneofone', only: ['lilotter'], thin: 0.82, ovr: 200,
-    stats: [[tl('PACE'), 188], [tl('SHOOTING'), 200], [tl('FIRST TOUCH'), 200], [tl('BALL CONTROL'), 200], [tl('PASSING'), 176], [tl('DEFENDING'), 142]],
+    stats: [[tl('PACE'), 188], [tl('SHOOTING'), 200], [tl('FIRST TOUCH'), 200], [tl('PUCK CONTROL'), 200], [tl('PASSING'), 176], [tl('DEFENDING'), 142]],
     r: { spd: 99, sht: 99, pas: 99, ctl: 99, def: 99 }, hair: 'anime', hairColor: '#e9e9f2', skin: '#f7dcc6', anime: true },
   // Matt: MattHidalgoCR7 only. The card shows the five numbers he was given; the game has one touch
   // stat, so his 99 dribbling is what ctl plays at (the 69 ball control is on the card). Passing 0 is
   // real: ratingAttr floors it at a pass 10% weaker than an average player's. Overall is set, not worked out.
   { id: 'matt', name: 'Matt', rarity: 'oneofone', only: ['matthidalgocr7'], buff: 1, ovr: 99,
-    stats: [[tl('PACE'), 99], [tl('DRIBBLING'), 99], [tl('SHOOTING'), 99], [tl('BALL CONTROL'), 69], [tl('PASSING'), 0]],
+    stats: [[tl('PACE'), 99], [tl('DRIBBLING'), 99], [tl('SHOOTING'), 99], [tl('PUCK CONTROL'), 69], [tl('PASSING'), 0]],
     r: { spd: 99, sht: 99, pas: 0, ctl: 99, def: 70 }, hair: 'buzz', hairColor: '#15161c', skin: '#c98b5e' },
 ];
 // Accessories: one slot, worn over any character. slot says where it's drawn on the body.
@@ -442,7 +442,7 @@ const ACCESSORIES = [
   { id: 'horns',       name: tl('Devil Horns'),     slot: 'head', price: 35000 },
   { id: 'halo',        name: tl('Halo'),            slot: 'head', price: 40000 },
   { id: 'cape',        name: tl('Hero Cape'),       slot: 'back', price: 45000 },
-  { id: 'goldboots',   name: tl('Golden Boots'),    slot: 'feet', price: 50000 },
+  { id: 'goldboots',   name: tl('Golden Skates'),    slot: 'feet', price: 50000 },
   { id: 'wings',       name: tl('Angel Wings'),     slot: 'back', price: 60000 },
   { id: 'jetpack',       name: tl('Jetpack'),          slot: 'back', price: 75000 },
   { id: 'royalcrown',    name: tl('Royal Crown'),      slot: 'head', price: 80000 },
@@ -453,8 +453,8 @@ const ACCESSORIES = [
   { id: 'royalcape',     name: tl('Royal Cape'),       slot: 'back', price: 140000 },
   { id: 'diamondchain',  name: tl('Diamond Chain'),    slot: 'neck', price: 150000 },
   { id: 'worldmedal',    name: tl('World Medal'),      slot: 'neck', price: 160000 },
-  { id: 'galaxyboots',   name: tl('Galaxy Boots'),     slot: 'feet', price: 175000 },
-  { id: 'flameboots',    name: tl('Flame Boots'),      slot: 'feet', price: 185000 },
+  { id: 'galaxyboots',   name: tl('Galaxy Skates'),     slot: 'feet', price: 175000 },
+  { id: 'flameboots',    name: tl('Flame Skates'),      slot: 'feet', price: 185000 },
   { id: 'robotarm',      name: tl('Robot Arm'),        slot: 'arm',  price: 195000 },
   { id: 'kingmantle',    name: tl("King's Mantle"),   slot: 'back', price: 210000 },
   { id: 'spacehelmet',   name: tl('Space Helmet'),     slot: 'head', price: 225000 },
@@ -474,14 +474,14 @@ const ACCESSORIES = [
   { id: 'warstripes',   name: tl('War Stripes'),     slot: 'face', rarity: 'epic',      price: 46000 },
   { id: 'beads',        name: tl('Lucky Beads'),     slot: 'neck', rarity: 'epic',      price: 50000 },
   { id: 'powerband',    name: tl('Power Band'),      slot: 'arm',  rarity: 'epic',      price: 56000 },
-  { id: 'neonboots',    name: tl('Neon Boots'),      slot: 'feet', rarity: 'epic',      price: 62000 },
+  { id: 'neonboots',    name: tl('Neon Skates'),      slot: 'feet', rarity: 'epic',      price: 62000 },
   { id: 'firecrown',    name: tl('Crown of Fire'),   slot: 'head', rarity: 'legendary', price: 90000 },
   { id: 'icecrown',     name: tl('Frost Crown'),     slot: 'head', rarity: 'legendary', price: 100000 },
   { id: 'phantommask',  name: tl('Phantom Mask'),    slot: 'face', rarity: 'legendary', price: 115000 },
   { id: 'rubypendant',  name: tl('Ruby Pendant'),    slot: 'neck', rarity: 'legendary', price: 130000 },
   { id: 'gauntlet',     name: tl('Gauntlet'),        slot: 'arm',  rarity: 'legendary', price: 145000 },
   { id: 'icewings',     name: tl('Ice Wings'),       slot: 'back', rarity: 'legendary', price: 165000 },
-  { id: 'frostboots',   name: tl('Frost Boots'),     slot: 'feet', rarity: 'legendary', price: 185000 },
+  { id: 'frostboots',   name: tl('Frost Skates'),     slot: 'feet', rarity: 'legendary', price: 185000 },
   { id: 'stormcloud',   name: tl('Storm Cloud'),     slot: 'head', rarity: 'mythic',    price: 280000 },
   { id: 'voidmask',     name: tl('Void Mask'),       slot: 'face', rarity: 'mythic',    price: 330000 },
   { id: 'cosmicchain',  name: tl('Cosmic Chain'),    slot: 'neck', rarity: 'mythic',    price: 390000 },

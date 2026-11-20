@@ -134,7 +134,7 @@ const EMOTE_SPECS = [
   ['woodwork', tl('Woodwork'), 'epic', 'footy', 'rage', 'post', 'bolt', 'none', 'sad'],
   ['addedtime', tl('Added Time'), 'epic', 'ref', 'blank', 'plusboard', '', 'pulse', 'tease'],
   ['subbedoff', tl('Subbed Off'), 'epic', 'coach', 'sad', 'subboard', '', 'sway', 'sad'],
-  ['discoball', tl('Disco Ball'), 'epic', 'footy', 'cool', '', 'disco', 'spin', 'joy'],
+  ['discoball', tl('Disco Puck'), 'epic', 'footy', 'cool', '', 'disco', 'spin', 'joy'],
   ['bigboss', tl('Big Boss'), 'epic', 'kid', 'smug', 'crown', 'sparkle', 'float', 'cool'],
   ['partymode', tl('Party Mode'), 'epic', 'fan', 'grin', 'headphones', 'notes', 'bounce', 'joy'],
   ['ninja', tl('Ninja Skills'), 'epic', 'kid', 'ninja', '', 'smoke', 'none', 'cool'],
@@ -151,7 +151,7 @@ const EMOTE_SPECS = [
   // ---- legendary
   ['goldenboot', tl('Golden Boot'), 'legendary', 'kid', 'proud', 'goldboot', 'sparkle', 'float', 'joy'],
   ['champions', tl('Champions'), 'legendary', 'coach', 'happy', 'trophy', 'confetti', 'bounce', 'joy'],
-  ['bicyclekick', tl('Bicycle Kick'), 'legendary', 'kid', 'determined', 'bicycle', 'speed', 'flip', 'joy'],
+  ['bicyclekick', tl('Flying Flip'), 'legendary', 'kid', 'determined', 'bicycle', 'speed', 'flip', 'joy'],
   ['rocketshot', tl('Rocket Shot'), 'legendary', 'footy', 'cool', 'rocket', '', 'shake', 'joy'],
   ['thegoat', tl('The GOAT'), 'legendary', 'goat', 'smug', '', 'sparkle', 'float', 'cool'],
   ['goatlaugh', tl('GOAT Laugh'), 'legendary', 'goat', 'lol', '', '', 'shake', 'tease'],
