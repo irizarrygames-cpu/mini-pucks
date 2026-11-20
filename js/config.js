@@ -26,12 +26,12 @@ const CFG = {
   KEEPER_R: 17,
   BALL_R: 9,
 
-  SPEED: 315,
-  SPEED_WITH_BALL: 288,
+  SPEED: 335,               // skates: a touch quicker than running
+  SPEED_WITH_BALL: 305,
   KEEPER_SPEED: 310,
-  ACCEL: 12,
-  HUMAN_ACCEL: 22,
-  HUMAN_DECEL: 28,
+  ACCEL: 9,                 // and a moment longer to get going...
+  HUMAN_ACCEL: 15,
+  HUMAN_DECEL: 7,           // ...and a glide when you let go, instead of stopping dead
   STEP: 1 / 120,
   MATCH_MINUTES: 2,  // every match, offline and online (server/game.js MATCH_MINUTES says the same)
 

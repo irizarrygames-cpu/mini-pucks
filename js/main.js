@@ -132,7 +132,7 @@ const Game = {
     $('intro').hidden = true;
     this.state = 'match';
     this.last = performance.now();
-    if (!(this.match && this.match.pens)) FX.showBanner(tl('KICK OFF!'), '#ffffff', 1.0, `${TEAMS.blue.name} vs ${TEAMS.red.name}`);
+    if (!(this.match && this.match.pens)) FX.showBanner(tl('FACE-OFF!'), '#ffffff', 1.0, `${TEAMS.blue.name} vs ${TEAMS.red.name}`);
     Sound.countdown(true);
   },
 

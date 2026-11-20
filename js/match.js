@@ -105,7 +105,7 @@ const Match = {
     if (m.autopilot) m.human.speedMul = 0.95;
     m.humanRarity = m.autopilot ? null : m.human.rarity || null;
     this.setupKickoff(m, 'blue');
-    if (!Game.headless && !m.online && m.mode !== 'pens') FX.showBanner(tl('KICK OFF!'), '#ffffff', 1.0, `${home.name} vs ${club.name}`);
+    if (!Game.headless && !m.online && m.mode !== 'pens') FX.showBanner(tl('FACE-OFF!'), '#ffffff', 1.0, `${home.name} vs ${club.name}`);
     return m;
   },
 
@@ -135,6 +135,14 @@ const Match = {
       p.clearActions();
     }
     Replay.clear(m);
+    // the faceoff: the other side's centre across the dot from the one taking it, facing them
+    const opp = m.players.find((p) => !p.isKeeper && p.role === 'att' && p.team !== team)
+      || m.players.find((p) => !p.isKeeper && p.team !== team);
+    if (opp) {
+      const dir = TEAMS[opp.team].dir;
+      opp.x = W / 2 - dir * (opp.r + CFG.BALL_R + 16); opp.y = H / 2;
+      opp.fx = dir; opp.faceX = dir;
+    }
     if (!kicker) {
       kicker = m.players.find((p) => p.team === team && !p.isKeeper) || m.players.find((p) => !p.isKeeper);
       const dir = TEAMS[kicker.team].dir;
