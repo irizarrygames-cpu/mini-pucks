@@ -8,12 +8,15 @@
 // PEN is the whole kick in plain maths (metres: goal 7.32 x 2.44, spot 11m out), with no screen,
 // so tools/pensscan.js can take thousands of kicks and measure how often they go in.
 const PEN = {
-  HW: 3.66, HT: 2.44, SPOT: 11, BR: 0.11, POST: 0.06,
+  // (hockey: a net nearer a hockey net's shape than a football goal's, and a goalie who is low and
+  // wide in his pads but does not fly as far)
+  HW: 2.0, HT: 2.44, SPOT: 11, BR: 0.11, POST: 0.06,
   // keeper: hips start at hip height and travel up to `reach` along the dive at `speed` m/s; the
   // body runs `legs` back from the hips to `arm` out to the fingertips, `r` thick
   // (you in goal get quicker feet than the bots: PLAYER_DIVE)
-  K: { hip: 0.72, reach: 1.75, up: 0.6, speed: 5.2, legs: 0.5, arm: 1.35, r: 0.33, standR: 0.38 },
-  PLAYER_DIVE: 7.2, BOT_SLOW: 2.5,
+  K: { hip: 0.62, reach: 0.74, up: 0.45, speed: 3.6, legs: 0.5, arm: 0.7, r: 0.28, standR: 0.42 },
+  PLAYER_DIVE: 4.1, BOT_SLOW: 2.5,
+  SIG: 0.6,   // the spray on a kick, in proportion to the narrower net
 
   // FREE KICKS. The ball is 22 m out. A wall of four stands 9.15 m from it, covering one side of
   // the goal (`side` -1 left, 1 right, in the goal's own across-ways metres); the keeper stands
@@ -23,7 +26,7 @@ const PEN = {
   // seen late (SCREEN: that much less time for the keeper), one round it a little late too.
   // At this distance a kick is less sure than a penalty (SIGMA). Half the time the wall jumps.
   // Tuned by tools/fkscan.js: over the wall goes in about 44%, round it about 33%, a penalty 69%.
-  FK: { DIST: 22, AT: 9.15, H: 2.0, JUMP: 0.32, KX: 0.9, NEAR: 0.12, SCREEN: 0.25, SCREEN_OPEN: 0.1, SIGMA: 1.35, MEN: 4 },
+  FK: { DIST: 22, AT: 9.15, H: 2.0, JUMP: 0.32, KX: 0.5, NEAR: 0.07, SCREEN: 0.25, SCREEN_OPEN: 0.1, SIGMA: 1.35, MEN: 4 },
   fkWall(r = Math.random) { return { side: r() < 0.5 ? -1 : 1, jump: r() < 0.45 }; },
   fkCovered(x, wall) { return wall.side > 0 ? x > this.FK.NEAR : x < -this.FK.NEAR; },
   fkArc(power) { return 0.35 + (1 - power) * 1.9; },
@@ -41,8 +44,8 @@ const PEN = {
   // slow: m/s off the pace (the bots' kicks, so you can see them coming)
   // wall: a free kick's wall ({ side, jump }), or nothing for a penalty
   kick(ax, az, power, q, slow = 0, wall = null) {
-    const sigma = (0.16 + (1 - q) * 0.22 + Math.max(0, power - 0.82) * 2.4) * (wall ? this.FK.SIGMA : 1);
-    const lift = Math.max(0, power - 0.78) * 2.0;
+    const sigma = (0.16 + (1 - q) * 0.22 + Math.max(0, power - 0.82) * 2.4) * (wall ? this.FK.SIGMA : 1) * this.SIG;
+    const lift = Math.max(0, power - 0.78) * 2.0 * this.SIG;
     const x = ax * this.HW + this.gauss() * sigma;
     const z = Math.max(this.BR, az * this.HT + lift + this.gauss() * sigma * 0.6);
     const v = 16 + power * 13 + q * 2 - slow;

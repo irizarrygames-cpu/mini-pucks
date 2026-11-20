@@ -778,41 +778,39 @@ const CELE_POSES = {
   },
 };
 
-// The ult shot: how the strike looks, 0..1 through it. Same shape as a celebration pose.
+// The ult shot: how the strike looks, 0..1 through it. Same shape as a celebration pose, plus where the
+// stick is (grip: the top hand; blade: the blade), in sprite units facing +x.
 const ULT_POSES = {
-  // leaning back and lashing through the ball with the laces
+  // ONE-TIMER: the stick up high behind, down through the puck as it arrives, and up into the follow-through
   volley: (u) => {
-    const swing = u < 0.3 ? -0.8 + u / 0.3 * 0.4 : Math.min(1, (u - 0.3) / 0.2);
-    return { jump: 8 + Math.max(0, Math.sin(u * Math.PI)) * 10, lean: -0.45 + swing * 0.25, upper: -0.2,
-      feet: [[-8 - swing * 4, -6 - swing * 2], [lerp(-4, 30, (swing + 0.8) / 1.8), lerp(-2, -40, (swing + 0.8) / 1.8)]],
-      hands: [[-26, -52 - swing * 6], [22 + swing * 6, -58]] };
+    let blade;
+    if (u < 0.45) { const w = u / 0.45; blade = [lerp(16, -36, w), lerp(-2, -62, w * w)]; }
+    else { const f = Math.min(1, (u - 0.45) / 0.3); blade = f < 0.5 ? [lerp(-36, 14, f * 2), lerp(-62, -2, f * 2)] : [lerp(14, 34, f * 2 - 1), lerp(-2, -46, f * 2 - 1)]; }
+    return { jump: 3, lean: u < 0.45 ? -0.12 : 0.12, stick: { grip: [-4, -42], blade } };
   },
-  // upside down, both legs cycling over the top
+  // SPIN-O-RAMA SHOT: two full turns with the puck on the blade, then the shot
   bicycle: (u) => {
-    const s = Math.sin(u * Math.PI * 2.2);
-    return { jump: Math.sin(Math.min(1, u * 1.15) * Math.PI) * 46 + 4, rot: -Math.sin(Math.min(1, u * 1.2) * Math.PI) * 2.3,
-      feet: [[-4 - s * 10, -12 - s * 8], [8 + s * 12, -18 + s * 8]],
-      hands: [[-26, -38], [24, -34]] };
+    const spin = u < 0.7, f = spin ? 0 : Math.min(1, (u - 0.7) / 0.25);
+    return { faceX: spin ? (Math.cos((u / 0.7) * Math.PI * 4) >= 0 ? 1 : -1) : 1, jump: spin ? 4 : 2, lean: spin ? 0.15 : -0.05,
+      stick: { grip: [-2, -38], blade: spin ? [26, -2] : [lerp(14, 32, f), lerp(-2, -44, f)] } };
   },
-  // a full backflip, striking it on the way round
-  backflip: (u) => ({ jump: Math.sin(Math.min(1, u * 1.1) * Math.PI) * 52 + 4, rot: -u * Math.PI * 2,
-    feet: [[-2, -14], [10, -20]], hands: [[-6, -28], [12, -26]] }),
-  // Diving forward onto the hands, the back arched, and the heel whipping up and over to strike it
-  // from behind the head.
+  // LACROSSE GOAL: the puck scooped up on the blade beside the head, then whipped at the net
+  backflip: (u) => {
+    const up = Math.min(1, u / 0.5), whip = u < 0.5 ? 0 : Math.min(1, (u - 0.5) / 0.3);
+    const blade = whip > 0 ? [lerp(-10, 30, whip), lerp(-80, -30, whip)] : [lerp(20, -10, up), lerp(-2, -80, up)];
+    return { jump: 6 + Math.sin(Math.min(1, u * 1.1) * Math.PI) * 14, lean: whip > 0 ? 0.2 : -0.1, stick: { grip: [2, -46], blade } };
+  },
+  // BETWEEN THE LEGS: down into a crouch, the blade back between the skates, and a flick from behind
   scorpion: (u) => {
-    const dive = Math.min(1, u / 0.3), tip = dive * dive * (3 - 2 * dive);
-    const whip = u < 0.22 ? 0 : Math.sin(Math.min(1, (u - 0.22) / 0.62) * Math.PI);
-    const settle = u > 0.84 ? (u - 0.84) / 0.16 : 0;
-    return { jump: 4 + Math.sin(Math.min(1, u * 1.1) * Math.PI) * 16, rot: 1.35 * tip * (1 - settle * 0.7), upper: -0.6 * tip * (1 - settle),
-      feet: [[-4 - whip * 3, -4], [lerp(-3, -20, whip), lerp(-5, -22, whip)]],
-      hands: [[14, -66], [21, -60]] };
+    const tuck = Math.min(1, u / 0.35), flick = u < 0.5 ? 0 : Math.min(1, (u - 0.5) / 0.3);
+    const blade = flick > 0 ? [lerp(-14, 10, flick), lerp(-2, -40, flick)] : [lerp(20, -14, tuck), -2];
+    return { jump: -4 * tuck + flick * 8, lean: 0.35 * tuck, stick: { grip: [6, -36], blade } };
   },
-  // both feet off the deck, legs scissoring through it (kept for older saved replays)
+  // FLYING SLAPSHOT: up into the air, the stick wound right back, and down through it
   scissors: (u) => {
-    const s = Math.sin(u * Math.PI * 3);
-    return { jump: Math.sin(Math.min(1, u * 1.2) * Math.PI) * 34 + 3, rot: -0.55, lean: -0.2,
-      feet: [[-6 - s * 12, -10 - s * 6], [6 + s * 14, -16 + s * 6]],
-      hands: [[-28, -46], [26, -44]] };
+    const w = Math.min(1, u / 0.5), f = u < 0.5 ? 0 : Math.min(1, (u - 0.5) / 0.3);
+    const blade = f > 0 ? [lerp(-36, 34, f), lerp(-62, -30, f)] : [lerp(16, -36, w), lerp(-2, -62, w)];
+    return { jump: Math.sin(Math.min(1, u * 1.15) * Math.PI) * 30 + 3, lean: -0.1, stick: { grip: [-4, -42], blade } };
   },
 };
 

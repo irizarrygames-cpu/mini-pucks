@@ -1,11 +1,12 @@
 'use strict';
 
-const HW = 3.66, HT = 2.44, BR = 0.11, POST = 0.06, HIP = 0.72;
+// (the same numbers as PEN in js/penalty.js: a net nearer a hockey net's shape, a low, wide goalie)
+const HW = 2.0, HT = 2.44, BR = 0.11, POST = 0.06, HIP = 0.62, SIG = 0.6;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 // Free kicks: the same numbers as PEN.FK in js/penalty.js (tools/fkscan.js checks they match).
 // The wall covers one side, the keeper stands over the other; a ball still lower than the wall when
 // it gets there on the wall's side is blocked; over the wall is seen late.
-const FK = { DIST: 22, AT: 9.15, H: 2.0, JUMP: 0.32, KX: 0.9, NEAR: 0.12, SCREEN: 0.25, SCREEN_OPEN: 0.1, SIGMA: 1.35, MEN: 4 };
+const FK = { DIST: 22, AT: 9.15, H: 2.0, JUMP: 0.32, KX: 0.5, NEAR: 0.07, SCREEN: 0.25, SCREEN_OPEN: 0.1, SIGMA: 1.35, MEN: 4 };
 const fkWall = (random) => ({ side: random() < 0.5 ? -1 : 1, jump: random() < 0.45 });
 const fkCovered = (x, wall) => (wall.side > 0 ? x > FK.NEAR : x < -FK.NEAR);
 const fkArc = (power) => 0.35 + (1 - power) * 1.9;
@@ -31,9 +32,9 @@ function frame(x, z) {
 }
 function kick(input, quality, random, wall = null) {
   const ax = clamp(Number(input.ax) || 0, -1.08, 1.08), az = clamp(Number(input.az) || 0.45, 0.03, 1.1), power = clamp(Number(input.power) || 0, 0, 1);
-  const sigma = (0.16 + (1 - quality) * 0.22 + Math.max(0, power - 0.82) * 2.4) * (wall ? FK.SIGMA : 1);
+  const sigma = (0.16 + (1 - quality) * 0.22 + Math.max(0, power - 0.82) * 2.4) * (wall ? FK.SIGMA : 1) * SIG;
   const x = ax * HW + gauss(random) * sigma;
-  const z = Math.max(BR, az * HT + Math.max(0, power - 0.78) * 2 + gauss(random) * sigma * 0.6);
+  const z = Math.max(BR, az * HT + Math.max(0, power - 0.78) * 2 * SIG + gauss(random) * sigma * 0.6);
   const v = 16 + power * 13 + quality * 2;
   let out = frame(x, z);
   let postIn = (out === 'post' || out === 'bar') && random() < 0.4;
@@ -47,11 +48,11 @@ function kick(input, quality, random, wall = null) {
 function saves(dive, shot) {
   const dx = clamp(Number(dive && dive.dx) || 0, -1, 1), dz = clamp(Number(dive && dive.dz) || 1, -1, 1), td = clamp(Number(dive && dive.td) || 0, -0.8, 1);
   const l = Math.hypot(dx, dz) || 1, nx = dx / l, nz = dz / l;
-  const up = Math.abs(nx) < 0.3 && nz > 0, s = clamp(7.2 * (shot.T - td), 0, up ? 0.6 : 1.75);
+  const up = Math.abs(nx) < 0.3 && nz > 0, s = clamp(4.1 * (shot.T - td), 0, up ? 0.45 : 0.74);
   const phi = Math.atan2(nx, nz) * clamp(s / 0.7, 0, 1), ax = nx * s - Math.sin(phi) * 0.5, az = Math.max(0.3, HIP + nz * s) - Math.cos(phi) * 0.5;
-  const bx = nx * s + Math.sin(phi) * 1.35, bz = Math.max(0.3, HIP + nz * s) + Math.cos(phi) * 1.35;
+  const bx = nx * s + Math.sin(phi) * 0.7, bz = Math.max(0.3, HIP + nz * s) + Math.cos(phi) * 0.7;
   const vx = bx - ax, vz = bz - az, l2 = vx * vx + vz * vz || 1, u = clamp(((shot.x - ax) * vx + (shot.z - az) * vz) / l2, 0, 1);
-  return Math.hypot(shot.x - (ax + vx * u), shot.z - (az + vz * u)) < 0.44;
+  return Math.hypot(shot.x - (ax + vx * u), shot.z - (az + vz * u)) < 0.39;
 }
 function decided(kicks) {
   const b = kicks.blue, r = kicks.red, gb = b.filter(Boolean).length, gr = r.filter(Boolean).length;

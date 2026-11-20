@@ -84,7 +84,10 @@ const Sprites = {
     // ---- the stick: where the top hand grips it and where its blade is (sprite units, facing +x).
     // None in a celebration, a fall or a dive; a goalie holds his own (below).
     let stick = null;
-    if (!cp && p.celebrateT <= 0 && !fall && !dive) {
+    if (cp && cp.stick) {
+      const { grip, blade } = cp.stick;
+      stick = { grip, low: [lerp(grip[0], blade[0], 0.36), lerp(grip[1], blade[1], 0.36)], blade };
+    } else if (!cp && p.celebrateT <= 0 && !fall && !dive) {
       let grip = [-2, -36], blade = [20, -1.5];
       const c = p.charging ? clamp(p.chargeT / CFG.CHARGE_FULL, 0, 1) : 0;
       if (p.isKeeper) { grip = [6, -34]; blade = [17, -1.5]; }
