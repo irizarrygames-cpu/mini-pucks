@@ -1,0 +1,326 @@
+// Boot + main loop. Fixed 120 Hz simulation, render every animation frame.
+const Game = {
+  state: 'home',
+  match: null,
+  headless: false,
+  last: 0,
+  acc: 0,
+  t: 0,
+  _diff: null,
+  lastOpts: { mode: 'quick' },
+
+  difficulty() { return this._diff || DIFFICULTY[Save.data.settings.difficulty] || DIFFICULTY.normal; },
+
+  // The difficulty setting is the base; the opponent club's level (0..3) leans on top of it.
+  setDifficulty(club) {
+    const b = DIFFICULTY[Save.data.settings.difficulty] || DIFFICULTY.normal;
+    // your own level leans on top of the setting and the opponent's level
+    this._diff = playerRamp(levelDiff(b, club ? club.level : 1), Levels.info(Save.data.xp || 0).level);
+  },
+
+  boot() {
+    if (this._booted) return;
+    this._booted = true;
+    // Each part starts on its own: one that throws (a browser missing something) is logged and the
+    // rest still start, instead of the whole game sitting dead behind its splash.
+    const part = (name, fn) => { try { fn(); } catch (e) { console.error('starting ' + name + ':', e); } };
+    part('words', () => I18N.apply(document.body)); // the page's own words, in this language
+    part('render', () => Render.init($('game')));
+    part('input', () => Input.init());
+    part('net', () => Net.init());
+    part('store', () => Store.init());
+    part('online', () => Online.init());
+    part('ui', () => UI.init());
+    part('social', () => Social.init());
+    // penalty shootout on PC: point at the goal to aim
+    for (const ev of ['pointermove', 'pointerdown']) window.addEventListener(ev, (e) => Pens.mouseAim(e), true);
+    UI.show('home');
+    $('home').hidden = true; // nothing but the splash until we know who you are
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { Render.buildLayer(); Render.homeCrowd = null; Render._homeSpot = null; });
+    document.addEventListener('visibilitychange', () => {
+      // off to the background (a phone may never bring this page back): unsaved progress goes up now
+      if (document.hidden) Net.flushSave();
+      // coming back after a while: start waking the host now, not when they press something
+      if (!document.hidden && Net.token && !Net.wsReady) Net.openSocket();
+      if (!document.hidden) Net.pokeConnection();
+      if (document.hidden) Commentary.pause();
+      else if (this.state === 'match') Commentary.resume();
+      // online matches keep running on the server, but their local commentary still pauses
+      if (document.hidden && this.state === 'match' && !(this.match && this.match.net)) UI.togglePause();
+    });
+    window.addEventListener('pagehide', () => { Commentary.pause(); Net.flushSave(); });
+    window.addEventListener('blur', () => Commentary.pause());
+    window.addEventListener('focus', () => { if (!document.hidden && this.state === 'match') Commentary.resume(); });
+    this.last = performance.now();
+    requestAnimationFrame((ts) => this.loop(ts));
+    // the server starts waking while the splash is being looked at, not after the tap
+    Net.prewarm();
+    UI.splashReady();
+  },
+
+  // A window that is in the middle of changing size is left alone until it settles: a phone
+  // sliding its address bar away walks the height through every pixel on the way.
+  checkSize(dt) {
+    const w = window.innerWidth, h = window.innerHeight;
+    if (w === Render.W && h === Render.H) { this._sizeT = 0; return; }
+    if (this._pendW !== w || this._pendH !== h) { this._pendW = w; this._pendH = h; this._sizeT = 0; return; }
+    this._sizeT = (this._sizeT || 0) + dt;
+    if (this._sizeT < 0.15) return;
+    this._sizeT = 0;
+    Render.resize();
+  },
+
+  goFullscreen() {
+    if (!UI.isTouch()) return;
+    try {
+      const el = document.documentElement;
+      if (!document.fullscreenElement && el.requestFullscreen) {
+        el.requestFullscreen({ navigationUI: 'hide' }).then(() => {
+          if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {});
+        }).catch(() => {});
+      }
+    } catch (e) { /* not supported */ }
+  },
+
+  // opts: { mode: 'quick' | 'cup', club }
+  startMatch(opts = this.lastOpts) {
+    Sound.unlock();
+    this.goFullscreen();
+    // A skill challenge is remembered here as { mode: 'challenge', id } so that RESTART can run it
+    // again, but it is not a match: asking for one as a match built a real quick match, which is
+    // what pressing RESTART in the middle of skill training used to do. Hand it back to the
+    // challenges, after clearing out what the last attempt left behind.
+    if (opts && opts.mode === 'challenge') {
+      FX.clear();
+      Input.reset();
+      this.acc = 0;
+      UI._lastTime = null; UI._lastMeter = null; UI._mode = null; UI._cd = null; UI._st = null; UI._rep = null;
+      $('hud').classList.remove('replaying', 'pens');
+      Pitch.use('normal');
+      SkillRun.start(opts.id);
+      return;
+    }
+    if (!Save.data.tutorialSeen) { UI.showHowTo(() => this.startMatch(opts)); return; }
+    this.lastOpts = opts;
+    // PRO MATCH is on the bigger pitch; everything else on the normal one
+    Pitch.use(opts && opts.mode === 'pro' ? 'pro' : 'normal');
+    let club = opts.club;
+    if (opts.mode === 'cup') { if (!Cup.state()) Cup.start(); club = Cup.opponent(); }
+    if (!club) club = Clubs.random(Clubs.mine());
+    FX.clear();
+    Input.reset();
+    UI.closeAll();
+    const pens = opts.mode === 'pens';
+    this.match = Match.create({ mode: opts.mode, club, format: pens ? '1v1' : opts.format || Save.data.format });
+    if (pens) Pens.init(this.match, !!opts.fk);   // opts.fk: free kicks rather than penalties
+    $('hud').classList.toggle('pens', pens);
+    Render.updateCamera(this.match, 0, true);
+    this.acc = 0;
+    UI._lastTime = null; UI._lastMeter = null; UI._mode = null; UI._cd = null; UI._st = null; UI._rep = null;
+    $('hud').classList.remove('replaying');
+    UI.show('match');
+    this.state = 'intro';
+    UI.updateHUD(this.match);
+    UI.showIntro(this.match);
+    Sound.startMusic();
+    Sound.startAmbience();
+    Sound.cheer(false);
+  },
+
+  kickOff() {
+    if (this.state !== 'intro') return;
+    $('intro').hidden = true;
+    this.state = 'match';
+    this.last = performance.now();
+    if (!(this.match && this.match.pens)) FX.showBanner(tl('KICK OFF!'), '#ffffff', 1.0, `${TEAMS.blue.name} vs ${TEAMS.red.name}`);
+    Sound.countdown(true);
+  },
+
+  // After the splash: signed in already? Straight home. Otherwise the sign-in page.
+  //
+  // The host is a free one that sleeps after a quiet spell and takes up to a minute to wake. Until
+  // build 97 this waited on it with nothing on screen: tap START, the splash went, and nothing came
+  // for as long as the server took. Now the splash stays up saying what is going on, every question
+  // has a deadline, and anybody who has played on this device before goes straight in from the copy
+  // kept here while the server wakes up behind them (the game comes online by itself).
+  async enter() {
+    try { await this.enterSteps(); } catch (e) { console.error('starting up:', e); }
+    // whatever happened, nobody is left looking at a splash that has stopped answering
+    if (!$('splash').classList.contains('gone') && !UI.playOffline()) UI.showAuth(tl('Something went wrong starting up. Try again.'), true);
+  },
+  async enterSteps() {
+    if (Net.token) {
+      const slow = setTimeout(() => UI.splashStatus(Net.WAKING_MSG), 1500);
+      const r = await Net.resume(Net.RESUME_WAIT);
+      clearTimeout(slow);
+      if (r) { UI.signedIn(); return; }
+      if (r === false) {
+        // no answer in time: the server asleep, or no connection at all
+        if (UI.playOffline()) return;
+        Net.offlineOffer = Net.noWifi();
+        UI.showAuth(Net.noWifi() ? Net.NO_WIFI_MSG : UI.AUTH_WAKING, true);
+        if (Net.noWifi()) return;
+        if (!(await Net.wake())) { Net.offlineOffer = true; UI.authButtons(); UI.authNote(UI.AUTH_UNREACHABLE, true, UI.AUTH_WAKING); return; }
+        const again = await Net.resume(8000);
+        if (again) { UI.signedIn(); return; }
+        UI.authNote('', false, UI.AUTH_WAKING);
+        return;
+      }
+      // null: the sign-in has run out, so the sign-in page it is
+    }
+    // back from changing language in Settings as a guest: a guest again, where they were
+    let guest = false;
+    try { guest = sessionStorage.getItem('ms-lang-guest') === '1'; sessionStorage.removeItem('ms-lang-guest'); } catch (e) { /* no storage */ }
+    if (guest && UI.playOffline(true)) return;
+    UI.showAuth(tl('Connecting\u2026'), true);
+    if (await Net.reachable(4000)) { UI.authNote('', false, tl('Connecting\u2026')); return; }
+    // signed in here before (the sign-in just ran out): carry on as them for now
+    if (UI.playOffline()) return;
+    if (Net.noWifi()) { Net.offlineOffer = true; UI.authButtons(); UI.authNote(Net.NO_WIFI_MSG, true, tl('Connecting\u2026')); return; }
+    // asleep: they can type, or play as a guest, while it wakes; the note goes once it is up
+    UI.authNote(UI.AUTH_WAKING, false, tl('Connecting\u2026'));
+    const up = await Net.wake();
+    if (!up) { Net.offlineOffer = true; UI.authButtons(); }
+    UI.authNote(up ? '' : UI.AUTH_UNREACHABLE, !up, UI.AUTH_WAKING);
+  },
+
+  goHome() {
+    if (this.match && this.match.net && Online.status === 'match') Net.send({ t: 'leave' });
+    if (this.match && this.match.net) { Online.status = 'idle'; Online.m = null; }
+    this.state = 'home';
+    this.match = null;
+    // (the home screen's match behind the menu, and anything after, is on the normal pitch)
+    if (Pitch.use('normal')) this.demo = null;
+    $('hud').classList.remove('pens'); Pens.label(tl('SHOOT'));
+    Render.zoom = 1;
+    FX.clear();
+    Input.reset();
+    Sound.chargeStop();
+    Sound.stopAmbience();
+    UI.show('home');
+  },
+
+  loop(ts) {
+    requestAnimationFrame((t) => this.loop(t));
+    const rawDt = Math.max(0, (ts - this.last) / 1000);
+    const realDt = Math.min(0.1, rawDt);
+    this.last = ts;
+    this.t += realDt;
+    this.watchFrames(rawDt);
+    this.checkSize(realDt);
+    if (!Render.W || !Render.H) return;
+    Input.update();
+    if (!$('howto').hidden) Tutorial.update(realDt);
+    UI.tick(realDt);
+    Net.tick(realDt);
+    const m = this.match;
+    if (m && m.pens && this.state !== 'home') {
+      // penalty shootout: its own little game and its own picture
+      if (this.state === 'match') Pens.step(m, realDt);
+      Pens.draw(m, realDt, this.t);
+    } else if (m && m.net && this.state !== 'home') {
+      // online: the server runs the match, we draw it
+      Online.update(realDt);
+      if (this.state === 'match') UltCut.update(m, realDt);
+      FX.update(realDt * (m.timeScale || 1), realDt);
+      Render.updateCamera(m, realDt);
+      Render.drawMatch(m, this.t);
+      UltCut.draw(Render.ctx, m, this.t);
+      if (this.state === 'match' || this.state === 'paused') UI.updateHUD(m);
+    } else if (m && this.state !== 'home') {
+      if (this.state === 'match' || this.state === 'results') {
+        if (this.state === 'match') UltCut.update(m, realDt);
+        this.acc += realDt;
+        let n = 0;
+        while (this.acc >= CFG.STEP && n < 14) { Match.step(m, CFG.STEP); this.acc -= CFG.STEP; n++; }
+        if (n >= 14) this.acc = 0;
+        FX.update(realDt * m.timeScale, realDt);
+        Render.updateCamera(m, realDt);
+      } else if (this.state === 'intro') {
+        Render.updateCamera(m, realDt);
+      }
+      Render.drawMatch(m, this.t);
+      UltCut.draw(Render.ctx, m, this.t);
+      if (m.challenge) { if (this.state === 'match') SkillRun.step(m, realDt); SkillRun.drawGauntlet(Render.ctx, m); }
+      if (this.state === 'match' && !m.challenge) UI.updateHUD(m);
+    } else if (this.demoShows()) {
+      this.stepDemo(realDt);
+      Render.drawHome(this.t, this.demo);
+      // (bars above PLAY come and go: party, cup, club, season pass; check the logo twice a second)
+      if (!this._tuckT || this.t - this._tuckT > 0.5) { this._tuckT = this.t; UI.tuckLogo(); }
+    }
+    if (m && this.state === 'match' && !document.hidden) Commentary.update(m, realDt);
+    else if (m) Commentary.pause();
+    else Commentary.stop();
+  },
+
+  // AUTO graphics: frames averaging slower than ~40fps for 2.5s step quality down; a steady
+  // 55fps+ stretch puts it back. Frames longer than 80ms are the browser throttling a
+  // background tab (or a load hitch), not a slow device, so they are thrown away — counting
+  // them used to knock a perfectly fine machine down to low the moment the tab lost focus.
+  watchFrames(dt) {
+    if (Save.data.settings.graphics !== 'auto' || document.hidden) return;
+    const w = this._fw || (this._fw = { t: 0, n: 0, sum: 0, grace: 2 });
+    if (dt > 0.08) { w.grace = 1.5; w.t = 0; w.n = 0; w.sum = 0; return; }
+    if (w.grace > 0) { w.grace -= dt; return; }
+    w.t += dt; w.n++; w.sum += dt;
+    // dropping down is decided in a second and a bit; climbing back up still takes its time,
+    // so a single rough patch cannot flip the picture back and forth
+    if (w.t >= 1.2 && w.n >= 20 && w.sum / w.n > 1 / 40 && Render.quality < 2) {
+      Render.quality++; Render.resize(); w.grace = 1.5; w.t = 0; w.n = 0; w.sum = 0; return;
+    }
+    if (w.t < 2.5 || w.n < 40) return;
+    const avg = w.sum / w.n;
+    w.t = 0; w.n = 0; w.sum = 0;
+    if (avg > 1 / 40 && Render.quality < 2) { Render.quality++; Render.resize(); w.grace = 2; }
+    else if (avg < 1 / 55 && Render.quality > 0) { Render.quality--; Render.resize(); w.grace = 2; }
+  },
+
+  // Behind a full-screen card nobody can see the demo, so it keeps its last frame instead of
+  // costing a sim step and a whole stadium every frame. (The customize screen was paying for
+  // both while you looked at celebration cards.)
+  DEMO_HIDERS: ['splash', 'auth', 'modal', 'daily', 'howto', 'trophy', 'lobby', 'queue', 'install-steps', 'rotate', 'challenge-end'],
+  demoShows() {
+    if (document.hidden) return false;
+    for (const id of this.DEMO_HIDERS) { const el = $(id); if (el && !el.hidden) return false; }
+    return true;
+  },
+
+  // A bot-vs-bot match plays silently behind the home screen. It is ALWAYS on — no setting
+  // and no frame rate turns it off; a slow screen just steps it at half rate.
+  stepDemo(dt) {
+    const slow = Render.quality >= 2 || Save.data.settings.graphics === 'low';
+    const prev = this.headless;
+    this.headless = true;
+    const diff = this._diff;
+    // the match behind the menu is always on the normal pitch, however the menu came back
+    // (signing in, or out, can show it without goHome)
+    if (Pitch.use('normal')) this.demo = null;
+    if (!this.demo || this.demo.phase === 'over') {
+      const me = Clubs.mine(), cur = Clubs.current;
+      const demoClub = cur && cur.id !== me.id && !!cur.euro === !!me.euro ? cur : Clubs.random(me);
+      Clubs.setMatch(Clubs.mine(), demoClub);
+      this.demo = Match.create({ autopilot: true, minutes: 30, club: demoClub });
+      this.demo.demo = true;
+      this.demo.phase = 'play';
+      Render.updateCamera(this.demo, 0, true);
+    }
+    this.demoAcc = (this.demoAcc || 0) + dt;
+    const step = slow ? CFG.STEP * 2 : CFG.STEP;
+    let n = 0;
+    while (this.demoAcc >= step && n < 8) { Match.step(this.demo, step); this.demoAcc -= step; n++; }
+    if (n >= 8) this.demoAcc = 0;
+    this._diff = diff;
+    this.headless = prev;
+    const b = this.demo.ball, cam = Render.cam;
+    const k = 1 - Math.exp(-1.5 * dt);
+    cam.x += (clamp(b.x, CFG.FIELD_W * 0.15, CFG.FIELD_W * 0.85) - cam.x) * k;
+    cam.y += (clamp(b.y, CFG.FIELD_H * 0.15, CFG.FIELD_H * 0.85) * CFG.TILT - cam.y) * k;
+  },
+};
+
+// Start the moment the page's own elements are there. It used to wait for 'load', which also waits
+// on every image, icon and font, and all that time the splash said TAP TO START and a tap did nothing.
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => Game.boot());
+else Game.boot();
+window.addEventListener('load', () => Game.boot()); // (a second call does nothing)

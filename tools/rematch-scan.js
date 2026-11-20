@@ -1,0 +1,41 @@
+'use strict';
+const fs = require('fs');
+// Windows checkouts hand this file back with CRLF line endings, and every pattern below is
+// written with plain newlines, so normalise first — otherwise the scan reports the results
+// screen as missing when the only thing that changed was how the lines end.
+const src = fs.readFileSync('js/ui.js', 'utf8').replace(/\r\n/g, '\n');
+// (build 115: an offline PRO MATCH, m.rules, plays PRO MATCH again)
+if (!src.includes("this._againMode = pens ? (m.net ? (fk ? 'onlinefk' : 'onlinepens') : (fk ? 'fk' : 'pens')) : m.rules ? 'pro' : 'quick';")) throw new Error('results screen can misroute a normal match to penalties');
+const hit = src.match(/  resultsAgain\(\) \{([\s\S]*?)\n  \},\n\};/);
+if (!hit) throw new Error('resultsAgain not found');
+const make = new Function('Game', 'Clubs', 'Save', 'PenCup', 'Cup', 'Online', `return function resultsAgain() {${hit[1]}\n}`);
+let fails = 0;
+const check = (name, ok, detail) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}${detail ? '  ' + JSON.stringify(detail) : ''}`); if (!ok) fails++; };
+const mine = { id: 'spain' }, old = { id: 'brazil' }, fresh = { id: 'japan' };
+const calls = [], exclusions = [], queues = [];
+const Game = { match: { club: old, format: '3v3' }, startMatch: (o) => calls.push(o), goHome() {} };
+const Clubs = { mine: () => mine, random: (...x) => { exclusions.push(x); return fresh; } };
+const Save = { data: { format: '4v4' } }, PenCup = { start() {} }, Cup = { start() {} };
+const Online = { m: {}, findMatch: (...x) => queues.push(x) };
+const UI = { _againMode: 'quick' }, again = make(Game, Clubs, Save, PenCup, Cup, Online).bind(UI);
+again();
+check('normal rematch stays normal', calls[0] && calls[0].mode === 'quick', calls[0]);
+check('normal rematch keeps format', calls[0] && calls[0].format === '3v3', calls[0]);
+check('normal rematch gets a new country', calls[0] && calls[0].club === fresh && exclusions[0][0] === mine && exclusions[0][1] === old, exclusions[0]);
+UI._againMode = 'pens'; again();
+check('penalty rematch stays penalties', calls[1] && calls[1].mode === 'pens', calls[1]);
+check('penalty rematch gets a new country', calls[1] && calls[1].club === fresh && exclusions[1][1] === old, exclusions[1]);
+UI._againMode = 'onlinepens'; again();
+check('online penalty rematch stays online penalties', queues.length === 1 && queues[0][0] === 'pens', queues[0]);
+UI._againMode = 'fk'; again();
+check('free-kick rematch stays free kicks', calls[2] && calls[2].mode === 'pens' && calls[2].fk === true, calls[2]);
+check('free-kick rematch gets a new country', calls[2] && calls[2].club === fresh && exclusions[2][1] === old, exclusions[2]);
+UI._againMode = 'onlinefk'; again();
+check('online free-kick rematch stays online free kicks', queues.length === 2 && queues[1][0] === 'fk', queues[1]);
+UI._againMode = 'pens'; again();
+check('penalty rematch is not free kicks', calls[3] && !calls[3].fk, calls[3]);
+UI._againMode = 'pro'; again();
+check('PRO MATCH rematch stays PRO MATCH', calls[4] && calls[4].mode === 'pro', calls[4]);
+check('PRO MATCH rematch keeps format', calls[4] && calls[4].format === '3v3', calls[4]);
+check('PRO MATCH rematch gets a new country', calls[4] && calls[4].club === fresh && exclusions[4] && exclusions[4][1] === old, exclusions[4]);
+if (fails) process.exit(1); console.log('all rematch checks passed');

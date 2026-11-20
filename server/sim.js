@@ -1,0 +1,75 @@
+// Runs the real game code on the server. The browser scripts are loaded unchanged into
+// one sandbox, with the few browser-only things (sound, particles, screens) swapped for
+// stand-ins that record what happened so it can be sent to the players as events.
+
+const vm = require('vm');
+const fs = require('fs');
+const path = require('path');
+
+const JS = path.join(__dirname, '..', 'js');
+const FILES = ['config.js', 'clubs.js', 'stadiums.js', 'celebs.js', 'emotes.js', 'pass.js', 'save.js', 'meta.js', 'entities.js', 'ai.js', 'match.js', 'rules.js', 'replay.js'];
+
+// sounds everyone should hear; the charge hum is local to whoever is charging
+const SOUND_SKIP = new Set(['chargeStart', 'chargeStop', 'unlock', 'startMusic', 'stopMusic', 'startAmbience', 'stopAmbience', 'applyVolumes', 'tap', 'ok', 'setExcitement']);
+// particles worth sending; dust, speed lines and embers each client makes for itself
+const FX_SEND = new Set(['text', 'showBanner', 'burst', 'sparks', 'ring', 'stars', 'doShake', 'doFlash', 'confetti']);
+
+// pitch: 'pro' for PRO MATCH rooms (build 116). The world is one set of globals (CFG, the walls, the
+// goals), so a bigger pitch gets a sandbox of its own and every PRO room is stepped in that one.
+function createSim({ pitch = 'normal' } = {}) {
+  let target = null; // the event list of the room being stepped right now
+  const record = (e) => { if (target) target.push(e); };
+
+  const Sound = new Proxy({}, {
+    get: (_, name) => (...args) => {
+      if (typeof name !== 'string' || SOUND_SKIP.has(name)) return;
+      record({ e: 's', n: name, a: args.filter((x) => typeof x !== 'object') });
+    },
+  });
+  const FX = new Proxy({ shake: { x: 0, y: 0, t: 0 }, flash: { a: 0 }, ground: [], air: [], texts: [] }, {
+    get: (obj, name) => {
+      if (name in obj) return obj[name];
+      return (...args) => { if (FX_SEND.has(name)) record({ e: 'f', n: name, a: args }); };
+    },
+  });
+  const noop = () => {};
+  const sandbox = {
+    console, Math, Date, JSON, Object, Array, Number, String, Boolean, Map, Set, Proxy, Symbol, Error, isFinite, parseInt, parseFloat,
+    setTimeout, clearTimeout,
+    Sound, FX,
+    UI: { toast: noop, showResults: (m) => { m.finished = true; }, refreshHome: noop },
+    Game: { headless: false, _diff: null, difficulty() { return this._diff || api.DIFFICULTY.normal; }, setDifficulty: noop },
+    Render: {},
+    Input: { move: { x: 0, y: 0 }, sprintHeld: false, consumePass: () => false, consumeSkill: () => false, consumeSlide: () => false, consumeShootPress: () => false, consumeShootRelease: () => false },
+    vibrate: noop,
+    // js/i18n.js's tl(), in English: what the server says goes to every player, and each of their
+    // games puts it into their own language when it shows it (FX.text, FX.showBanner, toasts)
+    tl: (s, args) => (args ? String(s).replace(/\{(\w+)\}/g, (m, k) => (args[k] !== undefined && args[k] !== null ? String(args[k]) : m)) : s),
+  };
+  sandbox.window = sandbox;
+  vm.createContext(sandbox);
+  for (const f of FILES) {
+    const code = fs.readFileSync(path.join(JS, f), 'utf8');
+    vm.runInContext(code, sandbox, { filename: 'js/' + f });
+  }
+  if (pitch === 'pro') vm.runInContext("Pitch.use('pro')", sandbox);
+  // lexical globals (const/let) aren't properties of the sandbox; pull out what we need
+  const api = vm.runInContext(`({ Match, CLUBS, EURO_CLUBS, countryFor, statLevels, statRatings, statOvr, overall, cleanLook, cleanAccessories, lookFromCustom, PRICES, CHARACTERS, pickBotCharacter, BOT_RARITY_ONLINE, BOT_RARITY_SHARE, SKILLS, ONLINE_BOTS, TRAILS, CELEBRATIONS, ACCESSORIES, ULT_KINDS, QUICK_CHAT, EMOTES, DIFFICULTY, playerRamp, Levels, CFG, FORMATS, SIDES, Clubs, TEAMS, RANK_TIERS, rankTier, rankNext, rankDelta, seasonNow, seasonEndsAt, NET_CHALLENGES, RANK_CHALLENGE, passNumOf, passNow, passAt, PASS_COUNT, PassGen, PASS_STEPS, PASS_COINS, BALLS })`, sandbox);
+
+  return {
+    ...api,
+    // tools only: run code inside the sandbox (tools/botscan.js)
+    run: (code) => vm.runInContext(code, sandbox),
+    // step one room's match while recording its events into that room's list
+    step(m, dt, events) {
+      target = events;
+      try { api.Match.step(m, dt); } finally { target = null; }
+    },
+    create(opts, events) {
+      target = events;
+      try { return api.Match.create(opts); } finally { target = null; }
+    },
+  };
+}
+
+module.exports = { createSim };

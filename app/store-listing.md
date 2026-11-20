@@ -1,0 +1,78 @@
+# Google Play listing: Mini Strikers
+
+Paste these into Play Console. Everything here is true of the game as it is now; if the game changes, change this.
+
+## Main store listing
+
+**App name** (30 max): `Mini Strikers`
+
+**Short description** (80 max):
+`Fast, colourful arcade football. Play solo, online or with your friends!`
+
+**Full description** (4000 max):
+
+```
+Mini Strikers is quick, colourful arcade football for everyone. Dribble, pass, shoot and tackle your way through 1v1, 2v2, 3v3 and 4v4 matches, solo or against real players from around the world.
+
+PLAY YOUR WAY
+- Quick Match: a fast game against a random country, with no connection needed
+- Pro Match: a bigger pitch with the real rules. The ball goes out for throw-ins, corners and goal kicks (2v2 to 4v4), against the bots or online
+- Play Online: real players from every country, and every win moves your country up the league
+- Ranked: 1v1 for rank points. Win and climb from Bronze all the way to Immortal (eleven ranks)
+- Friends: challenge a friend to a 1v1, penalties, free kicks or a Pro Match, make a room, share the code and play together, or run a friend cup
+- World Cup: play for the trophy online or against the bots. Lose once and you are out
+- Club Career: play for one of a hundred clubs from Europe, South America, Saudi Arabia, the USA, Mexico and Egypt (made-up names and badges), sign a new contract every three days and get paid coins for every goal and assist, then win the Champions Cup
+- Free Kicks: bend it over the wall or round it, against the bots or a real player online
+- Penalty Shootouts, Skill Challenges and Training for when you want to practise
+
+MAKE IT YOURS
+- One player, all yours: pick the haircut, the colours and the build, then spend coins to train five stats
+- Dozens of skill moves, goal celebrations, balls and trails, and as many accessories as you like at once
+- A ULT that is a different flaming kick every time: volley, bicycle kick, backflip kick or scorpion kick
+- Win coins, open crates and collect everything. Every crate shows its odds
+- 154 football emotes to collect and use in matches, with three new ones in the emote shop every day
+- Daily rewards, missions and medals to chase
+
+SAFE AND SIMPLE
+- Play as a guest straight away, or make a free account to keep your progress safe and play online
+- Quick chat uses short preset phrases only: no typing, no strangers messaging your child
+- Block anyone with one tap, and rude usernames get banned
+- No ads, and no tracking
+- Delete your account any time from Settings
+
+Simple touch controls on phones, keyboard or touch on bigger screens.
+
+Play in English, Spanish, Portuguese, French, German, Italian, Dutch, Turkish, Polish, Indonesian, Swedish or Romanian. Change it any time in Settings.
+```
+
+**App category**: Games, Sports
+**Tags**: Sports, Football / Soccer, Arcade, Multiplayer
+**Contact email**: irizarrygames@gmail.com
+**Privacy policy**: https://mini-strikers.onrender.com/privacy.html
+
+## Graphics to upload
+- App icon 512x512: `icon-512.png` in the project folder
+- Feature graphic 1024x500: `Desktop/Mini Strikers - Play Store/Store pictures/mini-strikers-feature-graphic.png`
+- Phone screenshots (landscape, at least 2, up to 8): `mini-strikers-screenshot-1-match.png` and `mini-strikers-screenshot-2-penalties.png` in the same folder (1920x1080, 24-bit PNG). Made by `tools/storeart.js`; run it again after a big change to the look.
+
+## App content questionnaires
+
+**Ads**: No, the app does not contain ads.
+
+**Data safety**
+- Collects: *User IDs* (the username) and *Purchase history* (only if coin packs are switched on), and *Other in-app activity / game progress*.
+- Shared with third parties: none.
+- Encrypted in transit: yes (HTTPS).
+- Users can request deletion: yes, in the app (Settings → Delete Account); a web address for this is also required: use the privacy page above.
+- No location, contacts, photos, files, device IDs or advertising IDs are collected.
+
+**Content rating (IARC questionnaire)**: cartoon sports game. No violence, no blood, no sexual content, no profanity, no gambling (crates are earned with in-game coins and never give duplicates; their odds are shown), no drugs. Users can interact (online matches, with preset quick-chat phrases only; usernames are visible and are filtered for rude words). The app does not share location. In-app purchases: yes, only once coin packs are switched on.
+
+**Target audience**: the account holder decides. If children under 13 are included, Play's Families policy applies: see PUBLISHING.md ("Kids").
+
+**Contains in-app purchases / random items**: tick "offers in-app purchases" only when coin packs are live. Crates give random items, which Google requires the listing to say: the full description above mentions the odds.
+
+## First release
+- Release type: Production (after the closed test described in PUBLISHING.md) or Closed testing first.
+- Upload the `.aab` file. Use Play App Signing (the default); the file is signed with the upload key.
+- Release name: `1.2.1 (22)`

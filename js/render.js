@@ -1,0 +1,1331 @@
+// Camera, stadium + field (pre-rendered once), goals, sorted sprites, overlays.
+const Render = {
+  canvas: null, ctx: null, W: 0, H: 0, dpr: 1, S: 1,
+  cam: { x: CFG.FIELD_W / 2, y: (CFG.FIELD_H / 2) * CFG.TILT },
+  layer: null, L: null, flags: [], homeCrowd: null,
+  quality: 0, // 0 full, 1 reduced, 2 low — AUTO graphics steps this up when frames run long
+
+  init(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.resize();
+    let t = 0;
+    window.addEventListener('resize', () => { clearTimeout(t); t = setTimeout(() => this.resize(), 120); });
+  },
+
+  resize() {
+    const setting = Save.data.settings.graphics;
+    this.W = window.innerWidth; this.H = window.innerHeight;
+    // Resolution budget: big or retina screens used to push 8M+ pixels a frame.
+    const low = setting === 'low' || this.quality >= 2;
+    const budget = low ? 1.0e6 : this.quality >= 1 ? 1.7e6 : 2.4e6;
+    let dpr = Math.min(window.devicePixelRatio || 1, low ? 1 : 2);
+    dpr = Math.min(dpr, Math.sqrt(budget / Math.max(1, this.W * this.H)));
+    this.dpr = Math.max(0.6, dpr);
+    this.canvas.width = Math.round(this.W * this.dpr);
+    this.canvas.height = Math.round(this.H * this.dpr);
+    // portrait is the fallback shape: pull the camera back so the pitch is not a keyhole
+    this.S = this.W >= this.H ? Math.min(this.W / 700, this.H / 370) : this.W / 620;
+    // The stands are drawn once into an image: thousands of little shapes, about 40ms. That image
+    // is in world units, so most window changes do not alter it at all — only its scale, the
+    // stadium and the two clubs do. Rebuilding it on every resize made a phone's address bar
+    // sliding away feel like the game had frozen.
+    if (this.layerFor() !== this._layerKey || !this.layer) { this.buildLayer(); this.homeCrowd = null; }
+  },
+
+  // what the pre-drawn stands actually depend on
+  layerFor() {
+    const low = Save.data.settings.graphics === 'low' || this.quality >= 1;
+    const f = Math.min(this.S * this.dpr * 1.1, low ? 0.75 : 1.0);
+    return [f.toFixed(3), Clubs.home && Clubs.home.id, Clubs.current && Clubs.current.id, CFG.FIELD_W, typeof Seasons !== 'undefined' ? Seasons.now() : ''].join('|');
+  },
+
+  // Slight perspective: things on the far side of the pitch shrink, the near side grows.
+  PERSP: 3000,
+  f(wy) {
+    if (wy === undefined) return 1;
+    const v = clamp(wy - this.cam.y / CFG.TILT, -2200, 2400);
+    return this.PERSP / (this.PERSP - v);
+  },
+  k(wy) { return this.S * this.f(wy); },
+  sx(wx, wy) { return (wx - this.cam.x) * this.S * this.f(wy) + this.W / 2 + FX.shake.x; },
+  sy(wy, wz) { return ((wy * CFG.TILT - this.cam.y) - wz) * this.f(wy) * this.S + this.H / 2 + FX.shake.y; },
+
+  // the flat pre-rendered stadium, drawn as thin horizontal strips so it takes the perspective
+  drawLayer(ctx) {
+    const L = this.L, img = this.layer, fl = this.LF, T = CFG.TILT, S = this.S;
+    const rows = clamp(Math.ceil(((L.Y1 - L.Y0) * S) / 5), 60, 150);
+    const step = img.height / rows;
+    for (let i = 0; i < rows; i++) {
+      const r0 = i * step, r1 = Math.min(img.height, r0 + step);
+      const wy0 = (L.Y0 + r0 / fl) / T, wy1 = (L.Y0 + r1 / fl) / T;
+      const y0 = this.sy(wy0, 0), y1 = this.sy(wy1, 0);
+      if (y1 < 0 || y0 > this.H) continue;
+      const f = this.f((wy0 + wy1) / 2);
+      const x0 = (L.X0 - this.cam.x) * S * f + this.W / 2 + FX.shake.x, dw = (L.X1 - L.X0) * S * f;
+      // only the part of the strip that is on the screen (a strip is the whole stadium wide, and
+      // most of it is off to the sides: copying all of it every frame was most of the drawing)
+      const pxW = img.width / dw;
+      const sa = clamp(Math.floor(-x0 * pxW) - 2, 0, img.width), sb = clamp(Math.ceil((this.W - x0) * pxW) + 2, 0, img.width);
+      if (sb - sa < 1) continue;
+      ctx.drawImage(img, sa, r0, sb - sa, r1 - r0, x0 + sa / pxW, y0, (sb - sa) / pxW, y1 - y0 + 0.75);
+    }
+  },
+
+  // ---------------- static layer ----------------
+  buildLayer() {
+    const T = CFG.TILT, M = CFG.SIDE_M;
+    // (PRO MATCH draws more stand round its pitch: the camera can go further out while you take a
+    // throw-in or a corner, so you are not stood under the buttons — see arena)
+    const pro = typeof Pitch !== 'undefined' && Pitch.size === 'pro';
+    const EX = pro ? 420 : 270, EY0 = pro ? 340 : 230, EY1 = pro ? 300 : 190;
+    const X0 = -EX, X1 = CFG.FIELD_W + EX, Y0 = -M * T - EY0, Y1 = (CFG.FIELD_H + M) * T + EY1;
+    const f = Math.min(this.S * this.dpr * 1.1, Save.data.settings.graphics === 'low' || this.quality >= 1 ? 0.75 : 1.0);
+    this.layerClub = Clubs.home && Clubs.current ? Clubs.home.id + '/' + Clubs.current.id + '/' + (typeof Seasons !== 'undefined' ? Seasons.now() : '') : null;
+    this._layerKey = this.layerFor();
+    this.LF = f;
+    const c = document.createElement('canvas');
+    c.width = Math.ceil((X1 - X0) * f); c.height = Math.ceil((Y1 - Y0) * f);
+    const g = c.getContext('2d');
+    g.scale(f, f); g.translate(-X0, -Y0);
+    this.L = { X0, X1, Y0, Y1 };
+    this.drawStadium(g, X0, X1, Y0, Y1);
+    this.layer = c;
+    this.flags = [];
+    const nFlags = Math.ceil(CFG.FIELD_W / 180);
+    for (let i = 0; i < nFlags; i++) this.flags.push({ x: 60 + i * 180, y: -M * T - 30 - 12 - (i % 2) * 24, team: i < nFlags / 2 ? 'blue' : 'red', ph: i * 1.3 });
+  },
+
+  drawCrowd(g, x0, x1, y0, y1, rng, backs, split, st = Save.stadium()) {
+    const shirtsB = [TEAMS.blue.jersey, TEAMS.blue.jersey, TEAMS.blue.stripes || TEAMS.blue.checks || TEAMS.blue.fx, '#ffffff', '#ffe14d', TEAMS.blue.shade];
+    const shirtsR = [TEAMS.red.jersey, TEAMS.red.jersey, TEAMS.red.stripes || TEAMS.red.checks || TEAMS.red.fx, '#ffffff', '#ffe14d', TEAMS.red.shade];
+    const hair = ['#2b1d14', '#4a2e1c', '#1b1b2a', '#f2c230', '#b8521f', '#6b3f22'];
+    let row = 0;
+    for (let y = y0 + 16; y < y1; y += 21, row++) {
+      g.fillStyle = st.stands[row % 2];
+      g.fillRect(x0, y - 16, x1 - x0, 21);
+      for (let x = x0 + (row % 2 ? 9 : 0); x < x1; x += 17) {
+        if (rng() < 0.08) continue;
+        const cx = x + (rng() - 0.5) * 5, cy = y + (rng() - 0.5) * 3;
+        const blueSide = split === undefined ? rng() < 0.5 : cx < split;
+        g.lineWidth = 1.6; g.strokeStyle = OUTLINE;
+        Sprites.rr(g, cx - 7, cy - 2, 14, 12, 4);
+        g.fillStyle = (blueSide ? shirtsB : shirtsR)[(rng() * 6) | 0]; g.fill(); g.stroke();
+        g.beginPath(); g.arc(cx, cy - 7, 5.6, 0, Math.PI * 2);
+        g.fillStyle = backs ? hair[(rng() * 6) | 0] : SKINS[(rng() * SKINS.length) | 0]; g.fill(); g.stroke();
+        if (!backs) {
+          g.fillStyle = hair[(rng() * 6) | 0];
+          g.beginPath(); g.arc(cx, cy - 8.5, 5.6, Math.PI * 1.05, Math.PI * 1.95); g.fill();
+        }
+        this.crowdHat(g, st.hats || st.kind, cx, cy, backs, rng);
+      }
+    }
+  },
+
+  drawStadium(g, X0, X1, Y0, Y1, st = Save.stadium()) {
+    const T = CFG.TILT, M = CFG.SIDE_M, E = CFG.END_M, C = CFG.CHAMFER, W = CFG.FIELD_W, H = CFG.FIELD_H;
+    const rng = mulberry32(7);
+    g.fillStyle = st.stands[0]; g.fillRect(X0, Y0, X1 - X0, Y1 - Y0);
+    const topBoard = -M * T;
+    const boardH = 30;
+    this.drawCrowd(g, X0, X1, Y0, topBoard - boardH, rng, false, W / 2, st);
+    this.drawCrowd(g, X0, X1, (H + M) * T + 26, Y1, rng, true, W / 2, st);
+    // side stands behind the goals
+    g.save(); g.beginPath(); g.rect(X0, topBoard - boardH, -E - 48 - X0, (H + M) * T + 26 - (topBoard - boardH)); g.clip();
+    this.drawCrowd(g, X0, -E - 48, topBoard - boardH, (H + M) * T + 26, rng, false, 1e9, st); g.restore();
+    g.save(); g.beginPath(); g.rect(W + E + 48, topBoard - boardH, X1 - (W + E + 48), (H + M) * T + 26 - (topBoard - boardH)); g.clip();
+    this.drawCrowd(g, W + E + 48, X1, topBoard - boardH, (H + M) * T + 26, rng, false, -1e9, st); g.restore();
+
+    // concrete apron around the arena
+    g.fillStyle = st.apron;
+    g.beginPath();
+    g.rect(-E - 48, topBoard - boardH, W + 2 * E + 96, (H + M) * T + 26 - (topBoard - boardH));
+    g.fill();
+
+    // grass floor of the arena (polygon incl. goal pockets)
+    const poly = [
+      [-E + C, -M], [W + E - C, -M], [W + E, -M + C], [W + E, GOAL_Y1], [W + CFG.GOAL_D, GOAL_Y1], [W + CFG.GOAL_D, GOAL_Y2], [W + E, GOAL_Y2],
+      [W + E, H + M - C], [W + E - C, H + M], [-E + C, H + M], [-E, H + M - C], [-E, GOAL_Y2], [-CFG.GOAL_D, GOAL_Y2], [-CFG.GOAL_D, GOAL_Y1], [-E, GOAL_Y1], [-E, -M + C],
+    ];
+    g.save();
+    g.beginPath(); poly.forEach(([x, y], i) => (i ? g.lineTo(x, y * T) : g.moveTo(x, y * T))); g.closePath();
+    g.clip();
+    const cols = st.grass, pattern = st.pattern || 'checks';
+    if (pattern === 'stripes' || pattern === 'hstripes') {
+      for (let i = -4; i < 50; i++) {
+        g.fillStyle = cols[(i + 40) % 2][0];
+        if (pattern === 'stripes') g.fillRect(i * 80, -200, 80.5, (H + 400) * T);
+        else g.fillRect(-300, i * 70 * T - 160, W + 600, 70 * T + 0.5);
+      }
+    } else if (pattern === 'diamond') {
+      g.fillStyle = cols[0][0]; g.fillRect(-300, -200, W + 600, (H + 400) * T);
+      g.fillStyle = cols[1][0];
+      for (let i = -3; i < Math.ceil((W + 300) / 100); i++) {
+        for (let j = -3; j < Math.ceil((H + 300) / 100); j++) {
+          const cx = i * 100, cy = j * 100;
+          g.beginPath(); g.moveTo(cx, (cy - 50) * T); g.lineTo(cx + 50, cy * T); g.lineTo(cx, (cy + 50) * T); g.lineTo(cx - 50, cy * T); g.closePath(); g.fill();
+        }
+      }
+    } else {
+      for (let i = -3; i < Math.ceil((W + 200) / 75); i++) {
+        for (let j = -2; j < Math.ceil((H + 160) / 70); j++) {
+          g.fillStyle = cols[(i + 20) % 2][(j + 20) % 2];
+          g.fillRect(i * 75, j * 70 * T, 75.5, 70 * T + 0.5);
+        }
+      }
+    }
+    g.strokeStyle = st.tuft; g.lineWidth = 2; g.lineCap = 'round';
+    for (let i = 0; i < 560; i++) {
+      const x = rng() * (W + 40) - 20, y = (rng() * (H + 40) - 20) * T;
+      if (pattern === 'grid') continue;
+      g.beginPath(); g.moveTo(x - 3, y - 3); g.lineTo(x, y); g.lineTo(x + 3, y - 4); g.stroke();
+    }
+    // goal pocket floors
+    g.fillStyle = 'rgba(20, 80, 20, 0.18)';
+    g.fillRect(W, GOAL_Y1 * T, CFG.GOAL_D, CFG.GOAL_W * T);
+    g.fillRect(-CFG.GOAL_D, GOAL_Y1 * T, CFG.GOAL_D, CFG.GOAL_W * T);
+    this.pitchDecor(g, st, rng);
+    g.restore();
+
+    // boards: far side (vertical face), near side (strip), ends + chamfers
+    const face = (x1, y1, x2, y2, h, color, lip) => {
+      g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.lineTo(x2, y2 - h); g.lineTo(x1, y1 - h); g.closePath();
+      g.fillStyle = color; g.fill(); g.lineWidth = 2.5; g.strokeStyle = OUTLINE; g.stroke();
+      g.beginPath(); g.moveTo(x1, y1 - h); g.lineTo(x2, y2 - h); g.lineTo(x2, y2 - h + 5); g.lineTo(x1, y1 - h + 5); g.closePath();
+      g.fillStyle = lip; g.fill();
+    };
+    face(-E + C, topBoard, W / 2, topBoard, boardH, TEAMS.blue.board, TEAMS.blue.lip);
+    face(W / 2, topBoard, W + E - C, topBoard, boardH, TEAMS.red.board, TEAMS.red.lip);
+    face(-E, (-M + C) * T, -E + C, topBoard, boardH, TEAMS.blue.board, TEAMS.blue.lip);
+    face(W + E - C, topBoard, W + E, (-M + C) * T, boardH, TEAMS.red.board, TEAMS.red.lip);
+    // slogans on the far board
+    g.font = '900 17px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    const words = [GAME_NAME.toUpperCase(), st.chant || GAME_SLOGANS[2], st.name || GAME_SLOGANS[0]];
+    for (let i = 0; i < Math.ceil(W / 205); i++) {
+      const x = 90 + i * 205, y = topBoard - boardH / 2 + 1;
+      const s = words[i % 3];
+      g.lineWidth = 4; g.strokeStyle = OUTLINE; g.strokeText(s, x, y);
+      g.fillStyle = '#ffffff'; g.fillText(s, x, y);
+    }
+    const crown = (cx, cy, s) => {
+      g.beginPath();
+      g.moveTo(cx - 10 * s, cy + 6 * s); g.lineTo(cx - 12 * s, cy - 6 * s); g.lineTo(cx - 5 * s, cy); g.lineTo(cx, cy - 9 * s);
+      g.lineTo(cx + 5 * s, cy); g.lineTo(cx + 12 * s, cy - 6 * s); g.lineTo(cx + 10 * s, cy + 6 * s); g.closePath();
+      g.fillStyle = '#ffffff'; g.fill(); g.lineWidth = 2; g.strokeStyle = OUTLINE; g.stroke();
+    };
+    for (let i = 0; i < Math.ceil(W / 205); i++) crown(90 + i * 205 - 118, topBoard - boardH / 2 + 1, 0.9);
+    const tower = (tx) => {
+      const baseY = topBoard - boardH - 6, topY = Y0 + 34;
+      g.fillStyle = '#5b6488'; g.strokeStyle = OUTLINE; g.lineWidth = 3;
+      g.beginPath(); g.moveTo(tx - 6, baseY); g.lineTo(tx - 3, topY + 30); g.lineTo(tx + 3, topY + 30); g.lineTo(tx + 6, baseY); g.closePath(); g.fill(); g.stroke();
+      Sprites.rr(g, tx - 34, topY - 6, 68, 40, 6); g.fillStyle = '#39406a'; g.fill(); g.stroke();
+      for (let rI = 0; rI < 2; rI++) for (let cI = 0; cI < 4; cI++) {
+        g.beginPath(); g.arc(tx - 24 + cI * 16, topY + 5 + rI * 17, 6, 0, Math.PI * 2);
+        g.fillStyle = '#fff6c8'; g.fill(); g.lineWidth = 2; g.stroke();
+      }
+    };
+    tower(-190); tower(W + 190); tower(W * 0.25); tower(W * 0.75);
+    // end boards (seen from above) beside each goal
+    const endBoard = (x, ya, yb, dir, color, lip) => {
+      g.fillStyle = color; g.strokeStyle = OUTLINE; g.lineWidth = 2.5;
+      g.beginPath(); g.rect(dir < 0 ? x - 16 : x, ya * T - boardH, 16, (yb - ya) * T + boardH); g.fill(); g.stroke();
+      g.fillStyle = lip; g.fillRect(dir < 0 ? x - 16 : x, ya * T - boardH, 5 * (dir < 0 ? 1 : 1), (yb - ya) * T + boardH);
+    };
+    endBoard(-E, -M + C, GOAL_Y1, -1, TEAMS.blue.board, TEAMS.blue.lip);
+    endBoard(-E, GOAL_Y2, H + M - C, -1, TEAMS.blue.board, TEAMS.blue.lip);
+    endBoard(W + E, -M + C, GOAL_Y1, 1, TEAMS.red.board, TEAMS.red.lip);
+    endBoard(W + E, GOAL_Y2, H + M - C, 1, TEAMS.red.board, TEAMS.red.lip);
+    // near boards (front strip)
+    const nb = (H + M) * T;
+    const strip = (x1, y1, x2, y2, color) => {
+      g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.lineTo(x2, y2 + 20); g.lineTo(x1, y1 + 20); g.closePath();
+      g.fillStyle = color; g.fill(); g.lineWidth = 2.5; g.strokeStyle = OUTLINE; g.stroke();
+    };
+    strip(-E, (H + M - C) * T, -E + C, nb, TEAMS.blue.board);
+    strip(-E + C, nb, W / 2, nb, TEAMS.blue.board);
+    strip(W / 2, nb, W + E - C, nb, TEAMS.red.board);
+    strip(W + E - C, nb, W + E, (H + M - C) * T, TEAMS.red.board);
+    g.font = '900 13px system-ui, sans-serif';
+    for (let i = 0; i < Math.ceil(W / 200); i++) {
+      const s = i % 2 ? GAME_SLOGANS[3] : GAME_NAME.toUpperCase();
+      g.lineWidth = 3.5; g.strokeStyle = OUTLINE; g.strokeText(s, 100 + i * 200, nb + 10.5);
+      g.fillStyle = '#ffffff'; g.fillText(s, 100 + i * 200, nb + 10.5);
+    }
+    this.stadiumDecor(g, st, X0, X1, topBoard, boardH, nb);
+  },
+
+  // fans dress for the weather
+  crowdHat(g, id, cx, cy, backs, rng) {
+    const r = rng();
+    const pickc = (list) => list[(rng() * list.length) | 0];
+    g.lineWidth = 1.6; g.strokeStyle = OUTLINE;
+    if (id === 'rain' && r < 0.2) {
+      g.beginPath(); g.arc(cx, cy - 9, 11.5, Math.PI, Math.PI * 2); g.closePath();
+      g.fillStyle = pickc(['#ff3a3f', '#ffe14d', '#2f7bff', '#3fcf4a', '#ff5fa8', '#16171d']); g.fill(); g.stroke();
+    } else if (id === 'snow' && r < 0.6) {
+      g.beginPath(); g.arc(cx, cy - 8.2, 6, Math.PI, Math.PI * 2); g.closePath();
+      g.fillStyle = pickc(['#ff3a3f', '#2f7bff', '#3fcf4a', '#ffe14d', '#8b4dff']); g.fill(); g.stroke();
+      g.beginPath(); g.arc(cx, cy - 14.6, 2.3, 0, Math.PI * 2); g.fillStyle = '#ffffff'; g.fill(); g.stroke();
+    } else if (id === 'desert' && r < 0.4) {
+      g.fillStyle = '#e8c98a';
+      g.beginPath(); g.ellipse(cx, cy - 10, 9.5, 2.8, 0, 0, Math.PI * 2); g.fill(); g.stroke();
+      g.beginPath(); g.arc(cx, cy - 10.5, 4.6, Math.PI, Math.PI * 2); g.closePath(); g.fill(); g.stroke();
+    } else if (id === 'royal' && r < 0.12) {
+      g.fillStyle = '#1b1b2a'; Sprites.rr(g, cx - 4.5, cy - 23, 9, 11, 1.5); g.fill(); g.stroke();
+      g.beginPath(); g.rect(cx - 7.5, cy - 13.5, 15, 2.6); g.fill(); g.stroke();
+    } else if (id === 'royal' && r < 0.2) {
+      g.beginPath(); g.moveTo(cx - 5, cy - 11); g.lineTo(cx - 5.5, cy - 17); g.lineTo(cx - 2, cy - 14); g.lineTo(cx, cy - 18); g.lineTo(cx + 2, cy - 14); g.lineTo(cx + 5.5, cy - 17); g.lineTo(cx + 5, cy - 11); g.closePath();
+      g.fillStyle = '#ffc21a'; g.fill(); g.stroke();
+    } else if (id === 'neon' && r < 0.35) {
+      const side = rng() < 0.5 ? -1 : 1;
+      g.lineCap = 'round'; g.lineWidth = 4.2; g.beginPath(); g.moveTo(cx + side * 6, cy - 1); g.lineTo(cx + side * 9, cy - 17); g.stroke();
+      g.lineWidth = 2.2; g.strokeStyle = pickc(['#39ff88', '#ff4df0', '#46d9ff', '#ffe14d']); g.stroke();
+    } else if (id === 'night' && r < 0.1) {
+      g.fillStyle = '#ffffff'; g.beginPath(); g.rect(cx + 5, cy - 18, 4, 6); g.fill(); g.stroke();
+    } else if (id === 'day' && r < 0.14) {
+      g.beginPath(); g.arc(cx, cy - 8.4, 5.9, Math.PI, Math.PI * 2); g.closePath();
+      g.fillStyle = pickc(['#ffffff', '#ff3a3f', '#2f7bff', '#ffe14d']); g.fill(); g.stroke();
+    } else if (id === 'sunset' && r < 0.2 && !backs) {
+      g.fillStyle = '#16171d'; g.fillRect(cx - 4.5, cy - 8, 9, 2.4);
+    } else if (id === 'summer' && r < 0.16) {
+      // a straw sun hat
+      g.fillStyle = '#f2d27a';
+      g.beginPath(); g.ellipse(cx, cy - 10, 10, 2.8, 0, 0, Math.PI * 2); g.fill(); g.stroke();
+      g.beginPath(); g.arc(cx, cy - 10.5, 4.8, Math.PI, Math.PI * 2); g.closePath(); g.fill(); g.stroke();
+      g.fillStyle = '#ff5fa8'; g.fillRect(cx - 4.6, cy - 12, 9.2, 1.6);
+    } else if (id === 'summer' && r < 0.32) {
+      g.beginPath(); g.arc(cx, cy - 8.4, 5.9, Math.PI, Math.PI * 2); g.closePath();
+      g.fillStyle = pickc(['#ffffff', '#ff3a3f', '#2f7bff', '#ffe14d', '#3fcf4a']); g.fill(); g.stroke();
+    }
+  },
+
+  // painted on the grass: worn goalmouths, then each stadium's weather and lights
+  pitchDecor(g, st, rng) {
+    const T = CFG.TILT, W = CFG.FIELD_W, H = CFG.FIELD_H, M = CFG.SIDE_M;
+    const oval = (x, y, rx, ry, color) => { g.fillStyle = color; g.beginPath(); g.ellipse(x, y * T, rx, ry * T, 0, 0, Math.PI * 2); g.fill(); };
+    if (st.pattern === 'grid') {
+      g.strokeStyle = 'rgba(57, 255, 136, 0.2)'; g.lineWidth = 3;
+      for (let x = 0; x <= W; x += 100) { g.beginPath(); g.moveTo(x, -M * T); g.lineTo(x, (H + M) * T); g.stroke(); }
+      for (let y = 0; y <= H; y += 100) { g.beginPath(); g.moveTo(-CFG.END_M, y * T); g.lineTo(W + CFG.END_M, y * T); g.stroke(); }
+    }
+    for (const x of [26, W - 26]) oval(x, H / 2, 60, 120, st.snowy ? 'rgba(120, 150, 110, 0.25)' : 'rgba(170, 140, 70, 0.16)');
+    if (st.lights) for (const [x, y] of [[0.25, 0.3], [0.75, 0.3], [0.25, 0.72], [0.75, 0.72]]) oval(W * x, H * y, 560, 380, 'rgba(255, 255, 225, 0.06)');
+    if (st.kind === 'rain') {
+      for (let i = 0; i < 16; i++) {
+        const x = rng() * W, y = rng() * H, rx = 36 + rng() * 50, ry = 16 + rng() * 16;
+        oval(x, y, rx, ry, 'rgba(40, 95, 125, 0.26)');
+        g.fillStyle = 'rgba(255, 255, 255, 0.3)'; g.fillRect(x - rx * 0.4, (y - ry * 0.3) * T, rx * 0.5, 3);
+      }
+    }
+    if (st.kind === 'desert') for (let i = 0; i < 24; i++) oval(rng() * W, rng() * H, 50 + rng() * 80, 26 + rng() * 40, 'rgba(226, 198, 120, 0.42)');
+    if (st.snowy) {
+      for (let x = -40; x < W + 60; x += 55) {
+        oval(x, -M + 6 + rng() * 14, 45 + rng() * 40, 16 + rng() * 12, 'rgba(255, 255, 255, 0.85)');
+        oval(x + 20, H + M - 6 - rng() * 14, 45 + rng() * 40, 16 + rng() * 12, 'rgba(255, 255, 255, 0.85)');
+      }
+      for (let i = 0; i < 18; i++) oval(rng() * W, rng() * H, 40 + rng() * 60, 20 + rng() * 30, 'rgba(255, 255, 255, 0.3)');
+    }
+    if (st.flowers || st.leafy) {
+      // little flat flowers (or fallen leaves) in clumps along both touchlines and round the corners
+      const cols = st.leafy ? ['#e8742a', '#c2300a', '#ffb03a', '#a8561a'] : ['#ffffff', '#ffe14d', '#ff8ac4', '#ffffff'];
+      for (let x = -30; x < W + 40; x += 64) for (const edge of [-M + 10 + rng() * 16, H + M - 10 - rng() * 16]) {
+        for (let q = 0; q < 4; q++) {
+          const fx = x + rng() * 46, fy = edge + (rng() - 0.5) * 18, c = cols[(rng() * cols.length) | 0];
+          if (st.leafy) {
+            g.save(); g.translate(fx, fy * T); g.rotate(rng() * Math.PI); g.fillStyle = c;
+            g.beginPath(); g.moveTo(-7, 0); g.quadraticCurveTo(0, -5, 7, 0); g.quadraticCurveTo(0, 5, -7, 0); g.fill(); g.restore();
+          } else {
+            g.fillStyle = c;
+            for (let pp = 0; pp < 5; pp++) { const a = (pp / 5) * Math.PI * 2; g.beginPath(); g.ellipse(fx + Math.cos(a) * 3, (fy + Math.sin(a) * 3) * T, 2.6, 2.6 * T, 0, 0, Math.PI * 2); g.fill(); }
+            g.fillStyle = '#ffc21a'; g.beginPath(); g.ellipse(fx, fy * T, 1.8, 1.8 * T, 0, 0, Math.PI * 2); g.fill();
+          }
+        }
+      }
+    }
+    if (st.kind === 'royal') {
+      // a crown mown into the centre circle
+      const cx = W / 2, cy = (H / 2) * T, s = 5.2, q = s * T;
+      g.fillStyle = 'rgba(255, 255, 255, 0.13)';
+      g.beginPath();
+      g.moveTo(cx - 10 * s, cy + 6 * q); g.lineTo(cx - 12 * s, cy - 6 * q); g.lineTo(cx - 5 * s, cy); g.lineTo(cx, cy - 9 * q);
+      g.lineTo(cx + 5 * s, cy); g.lineTo(cx + 12 * s, cy - 6 * q); g.lineTo(cx + 10 * s, cy + 6 * q); g.closePath(); g.fill();
+    }
+  },
+
+  // round the pitch: the rail and fan banners at the front of the far stand, board trims, photographers behind the goals
+  stadiumDecor(g, st, X0, X1, topBoard, boardH, nb) {
+    const W = CFG.FIELD_W, H = CFG.FIELD_H, E = CFG.END_M, C = CFG.CHAMFER, T = CFG.TILT;
+    const front = topBoard - boardH;
+    g.fillStyle = '#c9d2de'; g.strokeStyle = OUTLINE; g.lineWidth = 2;
+    g.beginPath(); g.rect(X0, front - 5, X1 - X0, 4); g.fill(); g.stroke();
+    const words = [st.chant || tl("LET'S GO!"), TEAMS.blue.name, st.name || tl('GOOOAL!'), TEAMS.red.name];
+    g.font = '900 15px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    for (let i = 0; 150 + i * 360 < W; i++) {
+      const x = 150 + i * 360, team = x < W / 2 ? TEAMS.blue : TEAMS.red, w = 112;
+      Sprites.rr(g, x - w / 2, front - 30, w, 25, 3); g.fillStyle = team.board; g.fill(); g.lineWidth = 2.5; g.strokeStyle = OUTLINE; g.stroke();
+      g.fillStyle = team.lip; g.fillRect(x - w / 2 + 3, front - 27, w - 6, 3);
+      g.lineWidth = 3.5; g.strokeText(words[i % words.length], x, front - 16);
+      g.fillStyle = '#ffffff'; g.fillText(words[i % words.length], x, front - 16);
+    }
+    if (st.kind === 'neon') {
+      g.lineCap = 'butt'; g.lineWidth = 3;
+      for (const [y, c] of [[front + 1.5, '#39ff88'], [topBoard - 1.5, '#ff4df0'], [nb + 1.5, '#46d9ff']]) { g.strokeStyle = c; g.beginPath(); g.moveTo(-E + C, y); g.lineTo(W + E - C, y); g.stroke(); }
+    }
+    if (st.kind === 'royal') { g.fillStyle = '#ffc21a'; g.fillRect(-E + C, front, W + 2 * E - 2 * C, 5); g.fillRect(-E + C, nb, W + 2 * E - 2 * C, 4); }
+    if (st.kind === 'rain') {
+      g.strokeStyle = 'rgba(255, 255, 255, 0.35)'; g.lineWidth = 3; g.lineCap = 'round';
+      for (let x = -E + C + 40; x < W + E - C; x += 140) { g.beginPath(); g.moveTo(x, topBoard - 6); g.lineTo(x + 14, front + 7); g.stroke(); }
+    }
+    if (st.snowy) {
+      g.fillStyle = '#ffffff'; g.strokeStyle = OUTLINE; g.lineWidth = 2;
+      g.beginPath(); g.moveTo(-E + C, front + 3);
+      for (let x = -E + C; x < W + E - C; x += 26) g.quadraticCurveTo(x + 13, front - 7 - (Math.abs(x / 26) % 3), x + 26, front + 3);
+      g.closePath(); g.fill(); g.stroke();
+    }
+    // photographers on the apron behind each goal
+    for (const [x, dir] of [[-E - 40, 1], [W + E + 40, -1]]) {
+      for (const fy of [0.22, 0.34, 0.66, 0.78]) {
+        const y = H * fy * T;
+        g.lineWidth = 1.8; g.strokeStyle = OUTLINE;
+        Sprites.rr(g, x - 8, y - 4, 16, 14, 5); g.fillStyle = '#2a2d45'; g.fill(); g.stroke();
+        g.fillStyle = '#ffe14d'; g.fillRect(x - 6, y + 3, 12, 2.5);
+        g.beginPath(); g.arc(x, y - 8, 6, 0, Math.PI * 2); g.fillStyle = SKINS[Math.floor(fy * 10) % SKINS.length]; g.fill(); g.stroke();
+        Sprites.rr(g, dir > 0 ? x + 3 : x - 15, y - 13, 12, 8, 2); g.fillStyle = '#16171d'; g.fill(); g.stroke();
+        Sprites.rr(g, dir > 0 ? x + 15 : x - 20, y - 11.5, 5, 5, 1.5); g.fillStyle = '#5b6488'; g.fill(); g.stroke();
+      }
+    }
+  },
+
+  // a small picture of a stadium for the shop: its top-left corner, cached
+  stadiumThumb(st) {
+    this._thumbs = this._thumbs || {};
+    const key = st.id + (st.season || '') + TEAMS.blue.board + TEAMS.red.board;
+    if (this._thumbs[key]) return this._thumbs[key];
+    const c = document.createElement('canvas'); c.width = 400; c.height = 180;
+    const g = c.getContext('2d'), sc = 400 / 1020;
+    g.scale(sc, sc); g.translate(150, 210);
+    this.drawStadium(g, -150, 870, -210, 250, st);
+    this.drawPitch(g);
+    return (this._thumbs[key] = c);
+  },
+
+  // weather and light over the whole scene. A fixed, small number of flat shapes a frame.
+  // v: where to draw it (defaults to the match camera); the shop swatch passes its own.
+  drawWeather(ctx, t, v) {
+    const st = (v && v.st) || Save.stadium();
+    if (!st.weather && !st.extra) return;
+    // Anything that moves across the SCREEN (birds, rain, snow, dust, sparkles) moves at a speed
+    // that does not change with the camera's zoom. It used to be time x speed x zoom, and since the
+    // camera zooms out to keep you and the ball in view, every little zoom change made that big
+    // number jump: the birds over a sunset ground teleported about whenever you moved.
+    const MS = v ? v.S : (this.motionS || this.S);
+    v = v || { W: this.W, H: this.H, S: this.S, px: (x, y) => this.sx(x, y), py: (y) => this.sy(y, 0), k: (y) => this.k(y) };
+    const W = v.W, H = v.H, S = v.S, T = CFG.TILT;
+    const lite = this.quality >= 2 || Save.data.settings.graphics === 'low';
+    const rnd = (i, s) => { const x = Math.sin(i * 127.1 + s * 311.7) * 43758.5453; return x - Math.floor(x); };
+    const tint = (c) => { ctx.fillStyle = c; ctx.fillRect(0, 0, W, H); };
+    // camera flashes going off in the far stand
+    const flashes = (n, color) => {
+      ctx.fillStyle = color;
+      for (let i = 0; i < n; i++) {
+        const c = t * 0.9 + rnd(i, 5), cyc = Math.floor(c), u = c - cyc;
+        if (u > 0.07) continue;
+        const wx = rnd(i, cyc) * CFG.FIELD_W, wy = -CFG.SIDE_M - 50 - rnd(i + 3, cyc) * 70;
+        const x = v.px(wx, wy), y = v.py(wy), r = (6 - u * 50) * v.k(wy);
+        if (r <= 0 || x < -10 || x > W + 10 || y < -10 || y > H + 10) continue;
+        ctx.beginPath();
+        for (let j = 0; j < 8; j++) { const a = (j / 8) * Math.PI * 2, d = j % 2 ? r * 0.4 : r; ctx.lineTo(x + Math.cos(a) * d, y + Math.sin(a) * d); }
+        ctx.closePath(); ctx.fill();
+      }
+    };
+    // falling snow, as many flakes as asked for (salt keeps a second fall from landing on the first)
+    const snowfall = (n, salt) => {
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      for (let i = 0; i < n; i++) {
+        const r = (1.4 + rnd(i, 3 + salt) * 2.4) * S, span = H + 20;
+        const y = ((rnd(i, 2 + salt) * span + t * (28 + rnd(i, 4 + salt) * 40) * MS) % span) - 10;
+        const x = (((rnd(i, 1 + salt) * W + Math.sin(t * 0.9 + i) * 16 * S) % W) + W) % W;
+        ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, Math.PI * 2);
+      }
+      ctx.fill();
+    };
+    if (!v.seasonOnly) switch (st.weather) {
+      case 'clouds': {
+        // cloud shadows drifting over the pitch
+        ctx.fillStyle = 'rgba(16, 40, 70, 0.08)';
+        for (let i = 0; i < 3; i++) {
+          const wx = ((t * 24 + i * 1300) % 3900) - 700, wy = 200 + i * 450;
+          const k = v.k(wy), x = v.px(wx, wy), y = v.py(wy);
+          if (x < -420 * k || x > W + 420 * k) continue;
+          ctx.beginPath();
+          for (const [dx, dy, r] of [[0, 0, 170], [160, 30, 125], [-150, 40, 115], [70, -70, 120]]) {
+            ctx.moveTo(x + (dx + r) * k, y + dy * T * k);
+            ctx.ellipse(x + dx * k, y + dy * T * k, r * k, r * T * k, 0, 0, Math.PI * 2);
+          }
+          ctx.fill();
+        }
+        break;
+      }
+      case 'sunset': {
+        tint('rgba(255, 110, 40, 0.10)');
+        ctx.strokeStyle = OUTLINE; ctx.lineWidth = Math.max(1.5, 2.2 * S); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+        for (let i = 0; i < 4; i++) {
+          const x = ((t * 40 * MS + i * 170 * MS + rnd(i, 1) * 300) % (W + 200)) - 100, y = H * (0.08 + rnd(i, 2) * 0.12) + Math.sin(t * 2 + i) * 4 * S;
+          const flap = Math.sin(t * 9 + i * 2) * 3 * S, s = 7 * S;
+          ctx.beginPath(); ctx.moveTo(x - s, y - flap); ctx.quadraticCurveTo(x - s / 2, y - s * 0.6, x, y); ctx.quadraticCurveTo(x + s / 2, y - s * 0.6, x + s, y - flap); ctx.stroke();
+        }
+        break;
+      }
+      case 'night': {
+        tint('rgba(8, 12, 45, 0.20)');
+        flashes(lite ? 6 : 14, '#ffffff');
+        break;
+      }
+      case 'rain': {
+        tint('rgba(30, 40, 70, 0.14)');
+        const n = lite ? 45 : 100, len = 30 * MS, span = H + len * 2, wide = W + 100;
+        ctx.strokeStyle = 'rgba(215, 230, 255, 0.5)'; ctx.lineWidth = Math.max(1, 1.8 * S); ctx.lineCap = 'round';
+        ctx.beginPath();
+        for (let i = 0; i < n; i++) {
+          const y = ((rnd(i, 2) * span + t * 1100 * MS * (0.85 + rnd(i, 3) * 0.3)) % span) - len;
+          const x = (((rnd(i, 1) * wide - y * 0.22) % wide) + wide) % wide - 50;
+          ctx.moveTo(x, y); ctx.lineTo(x - len * 0.22, y + len);
+        }
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(225, 240, 255, 0.55)'; ctx.lineWidth = Math.max(1, 1.5 * S);
+        for (let i = 0; i < (lite ? 8 : 18); i++) {
+          const c = t * 2.2 + rnd(i, 4), cyc = Math.floor(c), u = c - cyc;
+          const wx = rnd(i, cyc + 1) * CFG.FIELD_W, wy = rnd(i + 7, cyc) * CFG.FIELD_H;
+          const x = v.px(wx, wy), y = v.py(wy), r = (3 + u * 9) * v.k(wy);
+          if (x < -20 || x > W + 20 || y < -20 || y > H + 20) continue;
+          ctx.globalAlpha = 1 - u;
+          ctx.beginPath(); ctx.ellipse(x, y, r, r * T * 0.7, 0, 0, Math.PI * 2); ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+        break;
+      }
+      case 'snow': {
+        tint('rgba(225, 238, 255, 0.07)');
+        snowfall(lite ? 40 : 90, 0);
+        break;
+      }
+      case 'dust': {
+        tint('rgba(255, 185, 80, 0.07)');
+        ctx.strokeStyle = 'rgba(236, 206, 140, 0.7)'; ctx.lineWidth = Math.max(1, 2 * S); ctx.lineCap = 'round';
+        ctx.beginPath();
+        for (let i = 0; i < (lite ? 18 : 40); i++) {
+          const span = W + 80, x = ((rnd(i, 1) * span + t * (160 + rnd(i, 3) * 160) * MS) % span) - 40;
+          const y = rnd(i, 2) * H + Math.sin(t * 1.7 + i) * 8 * S, l = (6 + rnd(i, 5) * 10) * S;
+          ctx.moveTo(x, y); ctx.lineTo(x + l, y - l * 0.08);
+        }
+        ctx.stroke();
+        break;
+      }
+      case 'royal': {
+        ctx.fillStyle = '#ffe14d';
+        for (let i = 0; i < (lite ? 10 : 22); i++) {
+          const span = H + 40, y = span - ((rnd(i, 2) * span + t * (22 + rnd(i, 3) * 20) * MS) % span) - 20;
+          const x = rnd(i, 1) * W + Math.sin(t + i) * 10 * S, r = (2 + Math.abs(Math.sin(t * 3 + i * 1.7)) * 3) * S;
+          ctx.beginPath(); ctx.moveTo(x, y - r); ctx.lineTo(x + r * 0.3, y - r * 0.3); ctx.lineTo(x + r, y); ctx.lineTo(x + r * 0.3, y + r * 0.3);
+          ctx.lineTo(x, y + r); ctx.lineTo(x - r * 0.3, y + r * 0.3); ctx.lineTo(x - r, y); ctx.lineTo(x - r * 0.3, y - r * 0.3); ctx.closePath(); ctx.fill();
+        }
+        break;
+      }
+      case 'neon': {
+        tint('rgba(30, 0, 60, 0.14)');
+        const beams = ['rgba(57, 255, 136, 0.10)', 'rgba(255, 77, 240, 0.10)', 'rgba(70, 217, 255, 0.10)'];
+        for (let i = 0; i < 3; i++) {
+          const ox = W * (0.15 + i * 0.35), hx = W * (0.5 + Math.sin(t * 0.7 + i * 2.1) * 0.7), half = W * 0.05;
+          ctx.fillStyle = beams[i];
+          ctx.beginPath(); ctx.moveTo(ox - 4, -10); ctx.lineTo(ox + 4, -10); ctx.lineTo(hx + half, H + 10); ctx.lineTo(hx - half, H + 10); ctx.closePath(); ctx.fill();
+        }
+        flashes(lite ? 5 : 10, '#ff9ff5');
+        break;
+      }
+    }
+    // the season (build 121), over whatever the ground's own weather is. (Over a shootout only the
+    // season is drawn, and a winter ground whose own weather has turned to snow still snows there.)
+    switch (v.seasonOnly ? st.extra || (st.snowy ? 'snow' : null) : st.extra) {
+      case 'snow': snowfall(lite ? 26 : 60, 11); break;
+      case 'petals': {
+        const cols = ['#ffc8dd', '#ffffff', '#ff9ac4'];
+        for (let i = 0; i < (lite ? 14 : 30); i++) {
+          const span = H + 30, wide = W + 60;
+          const y = ((rnd(i, 21) * span + t * (30 + rnd(i, 22) * 26) * MS) % span) - 15;
+          const x = ((((rnd(i, 23) * wide + t * (34 + rnd(i, 24) * 30) * MS) % wide) + wide) % wide) - 30;
+          ctx.save(); ctx.translate(x, y); ctx.rotate(t * (1.5 + rnd(i, 25) * 2) + i);
+          ctx.fillStyle = cols[i % 3];
+          ctx.beginPath(); ctx.ellipse(0, 0, 3.4 * S, 1.8 * S * (0.5 + Math.abs(Math.sin(t * 3 + i)) * 0.5), 0, 0, Math.PI * 2); ctx.fill();
+          ctx.restore();
+        }
+        break;
+      }
+      case 'leaves': {
+        const cols = ['#e8742a', '#c2300a', '#ffb03a', '#a8561a'];
+        ctx.lineWidth = Math.max(0.8, 0.9 * S); ctx.strokeStyle = OUTLINE;
+        for (let i = 0; i < (lite ? 12 : 26); i++) {
+          const span = H + 40, wide = W + 80;
+          const y = ((rnd(i, 31) * span + t * (36 + rnd(i, 32) * 30) * MS) % span) - 20 + Math.sin(t * 2 + i) * 10 * S;
+          const x = ((((rnd(i, 33) * wide + t * (90 + rnd(i, 34) * 70) * MS) % wide) + wide) % wide) - 40;
+          const s = (4.6 + rnd(i, 35) * 2.4) * S;
+          ctx.save(); ctx.translate(x, y); ctx.rotate(t * (2 + rnd(i, 36) * 2) + i); ctx.scale(1, 0.4 + Math.abs(Math.sin(t * 2.4 + i)) * 0.6);
+          ctx.fillStyle = cols[i % 4];
+          ctx.beginPath(); ctx.moveTo(-s, 0); ctx.quadraticCurveTo(0, -s * 0.75, s, 0); ctx.quadraticCurveTo(0, s * 0.75, -s, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
+          ctx.restore();
+        }
+        break;
+      }
+      case 'fireflies': {
+        // a summer night: little lights drifting about, blinking on and off
+        ctx.fillStyle = '#fff3a0';
+        for (let i = 0; i < (lite ? 8 : 18); i++) {
+          const on = Math.sin(t * (1.6 + rnd(i, 51)) + i * 2.3);
+          if (on < 0.2) continue;
+          const x = rnd(i, 52) * W + Math.sin(t * 0.7 + i) * 30 * S, y = H * (0.1 + rnd(i, 53) * 0.8) + Math.cos(t * 0.9 + i * 1.3) * 20 * S;
+          const r = (1.2 + on * 1.4) * S;
+          ctx.globalAlpha = Math.min(1, on);
+          ctx.fillRect(x - r, y - r, r * 2, r * 2);
+        }
+        ctx.globalAlpha = 1;
+        break;
+      }
+      case 'sun': {
+        tint('rgba(255, 205, 90, 0.06)');
+        // butterflies, flapping their way across
+        const cols = ['#ffe14d', '#ff8af0', '#46d9ff'];
+        ctx.lineWidth = Math.max(0.8, 1 * S); ctx.strokeStyle = OUTLINE;
+        for (let i = 0; i < (lite ? 3 : 6); i++) {
+          const wide = W + 80, x = ((((rnd(i, 41) * wide + t * (40 + rnd(i, 42) * 30) * MS) % wide) + wide) % wide) - 40;
+          const y = H * (0.15 + rnd(i, 43) * 0.7) + Math.sin(t * 1.6 + i * 2) * 18 * S;
+          const flap = 0.25 + Math.abs(Math.sin(t * 11 + i * 1.7)) * 0.75, s = 4.2 * S;
+          ctx.fillStyle = cols[i % 3];
+          for (const side of [-1, 1]) {
+            ctx.beginPath(); ctx.ellipse(x + side * s * 0.7 * flap, y - s * 0.3, s * 0.8 * flap, s * 0.95, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+          }
+          ctx.fillStyle = OUTLINE; ctx.fillRect(x - S * 0.6, y - s * 0.9, S * 1.2, s * 1.6);
+        }
+        break;
+      }
+    }
+  },
+
+  // corner flags, waving
+  cornerFlag(ctx, x, y, t) {
+    const sx = this.sx(x, y), sy = this.sy(y, 0), k = this.k(y);
+    if (sx < -60 || sx > this.W + 60 || sy < -60 || sy > this.H + 80) return;
+    const wave = Math.sin(t * 5 + x * 0.01 + y * 0.02) * 4 * k;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = OUTLINE; ctx.lineWidth = 3.8 * k;
+    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx, sy - 38 * k); ctx.stroke();
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.8 * k; ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(sx, sy - 38 * k); ctx.lineTo(sx + 18 * k, sy - 33 * k + wave); ctx.lineTo(sx, sy - 26 * k); ctx.closePath();
+    ctx.fillStyle = '#ffe14d'; ctx.fill(); ctx.lineWidth = 2 * k; ctx.strokeStyle = OUTLINE; ctx.stroke();
+  },
+
+  // Pitch markings are drawn live with the perspective so they stay crisp at any zoom.
+  drawPitchLive(ctx) {
+    const W = CFG.FIELD_W, H = CFG.FIELD_H;
+    ctx.strokeStyle = '#ffffff'; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.lineWidth = Math.max(2, 5 * this.S);
+    const pt = (x, y) => [this.sx(x, y), this.sy(y, 0)];
+    const poly = (pts, close) => {
+      ctx.beginPath();
+      pts.forEach(([x, y], i) => { const [a, c] = pt(x, y); if (i) ctx.lineTo(a, c); else ctx.moveTo(a, c); });
+      if (close) ctx.closePath();
+      ctx.stroke();
+    };
+    const rect = (x, y, w, h) => poly([[x, y], [x + w, y], [x + w, y + h], [x, y + h]], true);
+    const arc = (cx, cy, r, a0, a1, n) => { const pts = []; for (let i = 0; i <= n; i++) { const a = a0 + ((a1 - a0) * i) / n; pts.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]); } poly(pts, false); };
+    rect(0, 0, W, H);
+    poly([[W / 2, 0], [W / 2, H]]);
+    arc(W / 2, H / 2, CFG.CIRCLE_R, 0, Math.PI * 2, 56);
+    const cy = H / 2, spot = CFG.BOX_D * 0.71, arcR = CFG.BOX_D * 0.47, aa = Math.acos((CFG.BOX_D - spot) / arcR);
+    ctx.fillStyle = '#ffffff';
+    for (const [x, dir] of [[0, 1], [W, -1]]) {
+      rect(dir > 0 ? 0 : W - CFG.BOX_D, cy - CFG.BOX_W / 2, CFG.BOX_D, CFG.BOX_W);
+      rect(dir > 0 ? 0 : W - CFG.SMALL_D, cy - CFG.SMALL_W / 2, CFG.SMALL_D, CFG.SMALL_W);
+      const px = x + dir * spot;
+      arc(px, cy, arcR, dir > 0 ? -aa : Math.PI - aa, dir > 0 ? aa : Math.PI + aa, 18);
+      const [sx0, sy0] = pt(px, cy);
+      ctx.beginPath(); ctx.ellipse(sx0, sy0, 5 * this.S, 4 * this.S, 0, 0, Math.PI * 2); ctx.fill();
+      if (dir > 0) { arc(0, 0, 30, 0, Math.PI / 2, 8); arc(0, H, 30, -Math.PI / 2, 0, 8); }
+      else { arc(W, 0, 30, Math.PI / 2, Math.PI, 8); arc(W, H, 30, Math.PI, Math.PI * 1.5, 8); }
+    }
+    const [cx0, cy0] = pt(W / 2, H / 2);
+    ctx.beginPath(); ctx.ellipse(cx0, cy0, 5 * this.S, 4 * this.S, 0, 0, Math.PI * 2); ctx.fill();
+  },
+
+  drawPitch(g) {
+    const T = CFG.TILT, W = CFG.FIELD_W, H = CFG.FIELD_H;
+    g.strokeStyle = '#ffffff'; g.lineWidth = 4; g.lineJoin = 'miter'; g.lineCap = 'butt';
+    const rect = (x, y, w, h) => { g.beginPath(); g.rect(x, y * T, w, h * T); g.stroke(); };
+    rect(0, 0, W, H);
+    g.beginPath(); g.moveTo(W / 2, 0); g.lineTo(W / 2, H * T); g.stroke();
+    g.beginPath(); g.ellipse(W / 2, (H / 2) * T, CFG.CIRCLE_R, CFG.CIRCLE_R * T, 0, 0, Math.PI * 2); g.stroke();
+    const cy = H / 2;
+    for (const [x, dir] of [[0, 1], [W, -1]]) {
+      rect(dir > 0 ? 0 : W - CFG.BOX_D, cy - CFG.BOX_W / 2, CFG.BOX_D, CFG.BOX_W);
+      rect(dir > 0 ? 0 : W - CFG.SMALL_D, cy - CFG.SMALL_W / 2, CFG.SMALL_D, CFG.SMALL_W);
+      const px = x + dir * 135;
+      g.fillStyle = '#ffffff';
+      g.beginPath(); g.ellipse(px, cy * T, 4, 4 * T, 0, 0, Math.PI * 2); g.fill();
+      g.beginPath();
+      g.ellipse(px, cy * T, 90, 90 * T, 0, dir > 0 ? -0.93 : Math.PI - 0.93, dir > 0 ? 0.93 : Math.PI + 0.93);
+      g.stroke();
+      for (const y of [0, H]) {
+        g.beginPath(); g.ellipse(x, y * T, 16, 16 * T, 0, 0, Math.PI * 2); g.stroke();
+      }
+    }
+    // re-fill beyond the touchline corners so the corner arcs only show inside
+    g.fillStyle = '#ffffff';
+    g.beginPath(); g.ellipse(W / 2, (H / 2) * T, 5, 5 * T, 0, 0, Math.PI * 2); g.fill();
+  },
+
+  // ---------------- camera ----------------
+  zoom: 1,
+  // Run away from the ball and the camera pulls back so you and the ball are both on screen: the
+  // further apart, the wider the view; come back and it closes in again. MIN is as far back as it
+  // goes (players at 55% of their size), RATE is how quickly the zoom follows. YOU and BALL are how
+  // far in from each edge (parts of the screen's width and height) they are kept: you further from
+  // the bottom, where the stick and the buttons are, and the ball nearer the edges than you. Past
+  // what MIN can show, you stay where you can be seen and the ball goes off the edge.
+  CAM_OUT: 200,
+  PULL: { MIN: 0.55, RATE: 2.4, YOU: { x: 0.26, top: 0.2, bottom: 0.4 }, BALL: { x: 0.1, top: 0.14, bottom: 0.12 } },
+  // How far either side of the middle of the screen you can be, at the heights YOU keeps you to,
+  // before the stick or a button is over you: on a small phone they reach further in than YOU.x
+  // allows for. Measured from the page like the minimap's spot, and kept until the screen changes.
+  _youX: null,
+  youRoomX() {
+    const kb = document.body.classList.contains('kb'), c = this._youX;
+    if (c && c.W === this.W && c.H === this.H && c.kb === kb) return c.x;
+    const Y = this.PULL.YOU, top = this.H * Y.top, bottom = this.H * (1 - Y.bottom), mid = this.W / 2;
+    let x = mid - this.W * Y.x, seen = 0;
+    for (const e of document.querySelectorAll('#joy-base, #hud .action, #btn-ult')) {
+      const r = e.getBoundingClientRect();
+      if (r.width < 2 || r.height < 2) continue;
+      seen++;
+      if (r.bottom > top && r.top < bottom) x = Math.min(x, (r.left >= mid ? r.left - mid : mid - r.right) - 18);
+    }
+    x = Math.max(0, x);
+    if (seen || kb) this._youX = { W: this.W, H: this.H, kb, x }; // not laid out yet, or hidden for a replay: don't keep it
+    return x;
+  },
+  // the furthest back the camera can be here without showing past the stands
+  pullMin() {
+    // the camera stops in the middle once the view is bigger than the pitch, so this is twice the
+    // way from the middle to the nearer edge of the pre-drawn stands (buildLayer), less a little
+    const T = CFG.TILT, M = CFG.SIDE_M, cy = (CFG.FIELD_H / 2) * T;
+    const wide = 2 * (CFG.FIELD_W / 2 + 270) - 40, tall = 2 * Math.min(cy + M * T + 230, (CFG.FIELD_H + M) * T + 190 - cy) - 40;
+    return Math.min(1, Math.max(this.PULL.MIN, this.W / this.S / wide, this.H / this.S / tall));
+  },
+  updateCamera(m, dt, snap) {
+    const h = m.human, b = m.ball;
+    let tx, ty, pull = 1;
+    // PRO MATCH: taking a throw-in or a corner yourself, the camera may go out into the stands to
+    // keep you clear of the stick and the buttons (eased in and out, so nothing jumps)
+    const out = m.rules && m.phase === 'restart' && m.restart && m.restart.human && !m.demo ? this.CAM_OUT : 0;
+    this.camOut = snap ? out : (this.camOut || 0) + (out - (this.camOut || 0)) * (1 - Math.exp(-5 * dt));
+    // an ult cutscene owns the camera while it runs
+    const cut = m.ultCut ? UltCut.camera(m) : null;
+    const star = !cut && m.phase === 'cele' && m.cele && m.cele.scorer;
+    const wide = star && ['airplane', 'pushups', 'sleep', 'backflip', 'worm', 'swim', 'surfer', 'cartwheel', 'matrix', 'scissor'].includes(m.cele.kind);
+    if (cut) {
+      tx = cut.x; ty = cut.y;
+    } else if (star) {
+      tx = star.x; ty = star.y - 16;
+    } else if (m.phase === 'goal' || m.phase === 'timeup' || m.phase === 'replay') {
+      tx = b.x; ty = b.y;
+    } else {
+      const R = out ? m.restart : null;
+      if (R) {
+        // your restart: look a little way the way you are aiming, so you stay well inside the screen
+        // (clear of the scoreboard at the top and the stick and buttons at the bottom)
+        tx = R.bx + R.ax * 50; ty = R.by + R.ay * 50;
+      } else {
+        tx = h.x + h.vx * 0.35 + TEAMS.blue.dir * 60;
+        ty = h.y + h.vy * 0.22;
+        const d = dist(h.x, h.y, b.x, b.y);
+        if (d > 120) { const w = clamp((d - 120) / 420, 0, 0.5); tx = lerp(tx, b.x, w); ty = lerp(ty, b.y, w); }
+      }
+      if (!m.demo) {
+        // persp: the near side of the pitch is drawn a little bigger (see f), so a thing down there
+        // sits further from the middle of the screen than its distance alone says
+        const P = this.PULL, W2 = this.W / 2, H2 = this.H / 2, lx = tx, ly = ty;
+        const persp = (y, cy) => Math.max(1, this.PERSP / (this.PERSP - clamp(y - cy, -2200, 2400)));
+        // the room from the middle of the screen to where e lets a thing go, on its side of the middle
+        const room = (e) => ({ x: Math.max(0, W2 - this.W * e.x), up: Math.max(0, H2 - this.H * e.top), down: Math.max(0, H2 - this.H * e.bottom) });
+        const you = room(P.YOU), ball = room(P.BALL);
+        you.x = Math.min(you.x, this.youRoomX());
+        // how far back to fit you and the ball round that spot, and never further than pullMin
+        const fit = (x, y, r) => Math.min(r.x / Math.max(1, Math.abs(x - lx) * this.S * persp(y, ly)),
+          (y > ly ? r.down : r.up) / Math.max(1, Math.abs(y - ly) * CFG.TILT * this.S * persp(y, ly)));
+        // (your restart: no pulling back — you and the ball are together; the camera just moves, out
+        // into the stands if it has to, to keep you where YOU keeps you, clear of the buttons)
+        const z = R ? 1 : clamp(Math.min(fit(h.x, h.y, you), fit(b.x, b.y, ball)), this.pullMin(), 1);
+        // Where the camera goes at zoom z. When that is not far enough back for both, the ball gives
+        // way and you stay where YOU keeps you: measured at the closer of the zoom now and the zoom
+        // it is heading for, so that holds while it is still on its way out too. Then the stands
+        // stop it, as they always have; out is how many pixels past where YOU keeps you that leaves you.
+        const aim = (z) => {
+          const zs = this.S * Math.max(z, snap ? z : this.zoom) * persp(h.y, ly);
+          const x = clamp(lx, h.x - you.x / zs, h.x + you.x / zs), y = clamp(ly, h.y - you.down / zs / CFG.TILT, h.y + you.up / zs / CFG.TILT);
+          const [cx, cy] = this.arena(x, y * CFG.TILT, this.S * z), k = this.S * z * persp(h.y, cy / CFG.TILT);
+          const sx = (h.x - cx) * k, sy = (h.y * CFG.TILT - cy) * k;
+          return { z, x, y, out: Math.max(0, Math.abs(sx) - you.x) + Math.max(0, sy - you.down) + Math.max(0, -sy - you.up) };
+        };
+        // Near a touchline the stands stop the camera, so pulling back can push you towards the edge
+        // of the screen, onto the stick and the buttons. Come back in until you are where YOU keeps
+        // you; if no zoom manages that, take the one that leaves you least far out.
+        let a = aim(z);
+        for (let n = z + 0.05; a.out > 1 && n < 1.025; n += 0.05) { const t = aim(Math.min(1, n)); if (t.out < a.out - 0.5) a = t; }
+        pull = a.z; tx = a.x; ty = a.y;
+      }
+    }
+    // Leave room for the full pose plus hats, wings, capes and celebration props.
+    const zoomTo = cut ? cut.zoom : star ? (wide || (star.look && star.look.acc) ? 1.58 : 1.7) : pull;
+    const rate = star ? 3.2 : zoomTo < 1 || this.zoom < 1 ? this.PULL.RATE : 6;
+    this.zoom = snap || cut ? zoomTo : this.zoom + (zoomTo - this.zoom) * (1 - Math.exp(-rate * dt));
+    let py;
+    [tx, py] = this.arena(tx, ty * CFG.TILT, this.S * this.zoom);
+    const k = snap || cut ? 1 : 1 - Math.exp(-(star ? 7 : 4.5) * dt);
+    this.cam.x += (tx - this.cam.x) * k;
+    this.cam.y += (py - this.cam.y) * k;
+  },
+
+  // The camera stops where the stands do: at zs (scale times zoom) the middle of the screen can be no
+  // nearer the edge than this, and once the view is bigger than the pitch it sits in the middle.
+  // x across, py the tilted height (y * TILT); gives back the pair it may have.
+  // (camOut: further, into the stands PRO MATCH draws round its pitch, while you take a restart)
+  arena(x, py, zs) {
+    const halfW = this.W / 2 / zs, halfH = this.H / 2 / zs, o = this.camOut || 0;
+    const minX = -CFG.END_M - 90 - o + halfW, maxX = CFG.FIELD_W + CFG.END_M + 90 + o - halfW;
+    const minY = -CFG.SIDE_M * CFG.TILT - 95 - o + halfH, maxY = (CFG.FIELD_H + CFG.SIDE_M) * CFG.TILT + 80 + o - halfH;
+    return [minX > maxX ? CFG.FIELD_W / 2 : clamp(x, minX, maxX), minY > maxY ? (CFG.FIELD_H / 2) * CFG.TILT : clamp(py, minY, maxY)];
+  },
+
+  // ---------------- helpers ----------------
+  chunkyText(ctx, str, x, y, size, color, stroke) {
+    ctx.font = `400 ${size}px "Lilita One", system-ui, sans-serif`;
+    // never wider than the screen: a longer line in another language comes out smaller instead
+    const t = ctx.getTransform ? ctx.getTransform() : { a: 1, b: 0 }, across = Math.hypot(t.a, t.b) || 1;
+    const room = ctx.canvas ? (ctx.canvas.width / across) * 0.94 : Infinity, wide = ctx.measureText(str).width;
+    if (wide > room) {
+      const k = room / wide;
+      size *= k;
+      if (stroke) stroke *= k;
+      ctx.font = `400 ${size}px "Lilita One", system-ui, sans-serif`;
+    }
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = stroke || Math.max(3, size * 0.2);
+    ctx.strokeStyle = OUTLINE;
+    ctx.strokeText(str, x, y + size * 0.06);
+    ctx.strokeText(str, x, y);
+    ctx.fillStyle = color;
+    ctx.fillText(str, x, y);
+  },
+  star(ctx, x, y, r) {
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const a = -Math.PI / 2 + (i * Math.PI) / 5, rr = i % 2 ? r * 0.45 : r;
+      ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+    }
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+  },
+
+  goalPart(ctx, side, front, bulge) {
+    const S = this.S, x = side === 'right' ? CFG.FIELD_W : 0, dir = side === 'right' ? 1 : -1;
+    const D = CFG.GOAL_D, Hh = CFG.GOAL_H, Hb = CFG.GOAL_H * 0.76, bx = x + dir * (D + bulge * 26);
+    const P = (wx, wy, wz) => [this.sx(wx, wy), this.sy(wy, wz)];
+    const grid = (a, b, c, d, nu, nv) => {
+      ctx.beginPath();
+      for (let i = 0; i <= nu; i++) {
+        const u = i / nu;
+        const p1 = [lerp(a[0], b[0], u), lerp(a[1], b[1], u)], p2 = [lerp(d[0], c[0], u), lerp(d[1], c[1], u)];
+        ctx.moveTo(p1[0], p1[1]); ctx.lineTo(p2[0], p2[1]);
+      }
+      for (let j = 0; j <= nv; j++) {
+        const v = j / nv;
+        const p1 = [lerp(a[0], d[0], v), lerp(a[1], d[1], v)], p2 = [lerp(b[0], c[0], v), lerp(b[1], c[1], v)];
+        ctx.moveTo(p1[0], p1[1]); ctx.lineTo(p2[0], p2[1]);
+      }
+      ctx.stroke();
+    };
+    const quad = (pts, alpha) => {
+      ctx.globalAlpha = alpha; ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); pts.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]))); ctx.closePath(); ctx.fill();
+      ctx.globalAlpha = 1;
+    };
+    const post = (a, b, w) => {
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = OUTLINE; ctx.lineWidth = (w + 3) * S;
+      ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = w * S;
+      ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+    };
+    ctx.lineWidth = Math.max(1, 1.3 * S);
+    ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+    if (!front) {
+      const a = P(bx, GOAL_Y1, 0), b = P(bx, GOAL_Y2, 0), c = P(bx, GOAL_Y2, Hb), d = P(bx, GOAL_Y1, Hb);
+      quad([a, b, c, d], 0.16); grid(a, b, c, d, 9, 3);
+      const e = P(x, GOAL_Y1, Hh), f2 = P(x, GOAL_Y2, Hh);
+      quad([e, f2, c, d], 0.12); grid(e, f2, c, d, 9, 2);
+      const s1 = P(x, GOAL_Y1, 0), s2 = P(bx, GOAL_Y1, 0);
+      quad([s1, s2, d, e], 0.12); grid(s1, s2, d, e, 3, 3);
+      post(d, c, 3.2);
+      post(P(x, GOAL_Y1, 0), P(x, GOAL_Y1, Hh), 5);
+    } else {
+      const s1 = P(x, GOAL_Y2, 0), s2 = P(bx, GOAL_Y2, 0), c = P(bx, GOAL_Y2, Hb), e = P(x, GOAL_Y2, Hh);
+      quad([s1, s2, c, e], 0.12); grid(s1, s2, c, e, 3, 3);
+      post(P(x, GOAL_Y2, 0), P(x, GOAL_Y2, Hh), 5);
+      post(P(x, GOAL_Y1, Hh), P(x, GOAL_Y2, Hh), 5);
+    }
+  },
+
+  // ---------------- frame ----------------
+  drawMatch(m, t) {
+    // the cutscene zooms by drawing the whole frame at a bigger scale
+    const baseS = this.S;
+    this.motionS = baseS; // (the weather moves at the unzoomed scale)
+    this.S = baseS * (m.demo ? 1 : this.zoom);
+    try { this.drawFrame(m, t); } finally { this.S = baseS; }
+  },
+
+  drawFrame(m, t) {
+    const ctx = this.ctx, S = this.S, W = this.W, H = this.H, b = m.ball;
+    this.boxes = null; // refilled by whatever HUD this frame draws on the canvas
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    ctx.fillStyle = Save.stadium().stands[0]; ctx.fillRect(0, 0, W, H);
+    const L = this.L;
+    ctx.imageSmoothingEnabled = true;
+    this.drawLayer(ctx);
+    this.drawPitchLive(ctx);
+
+    // waving flags in the stands
+    const excited = m.phase === 'goal';
+    for (const f of this.flags) {
+      const x = this.sx(f.x, f.y / CFG.TILT), y = this.sy(f.y / CFG.TILT, 0), fk = this.k(f.y / CFG.TILT);
+      if (x < -60 || x > W + 60 || y < -80 || y > H + 20) continue;
+      const wave = Math.sin(t * (excited ? 16 : 5) + f.ph) * 6 * fk;
+      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 2.5 * fk;
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y - 46 * fk); ctx.stroke();
+      ctx.fillStyle = TEAMS[f.team].board; ctx.lineWidth = 2 * fk;
+      ctx.beginPath(); ctx.moveTo(x, y - 46 * fk); ctx.lineTo(x + 30 * fk, y - 40 * fk + wave); ctx.lineTo(x, y - 30 * fk); ctx.closePath(); ctx.fill(); ctx.stroke();
+    }
+
+    // shadows
+    for (const p of m.players) Sprites.shadow(ctx, this.sx(p.x, p.y), this.sy(p.y, 0), this.k(p.y), p.r * 1.3, p.diveT > 0 || p.hopT > 0 ? 14 : 0);
+    Sprites.shadow(ctx, this.sx(b.x, b.y), this.sy(b.y, 0), this.k(b.y), CFG.BALL_R * 1.05, b.z);
+
+    FX.drawGround(ctx, this);
+    if (!m.demo) this.drawHumanRing(ctx, m, t);
+
+    // depth-sorted sprites
+    const list = [];
+    for (const p of m.players) list.push({ y: p.y, p });
+    list.push({ y: b.y + 0.5, ball: true });
+    list.push({ y: GOAL_Y1, goal: 'right', front: false }, { y: GOAL_Y2 + 1, goal: 'right', front: true });
+    list.push({ y: GOAL_Y1, goal: 'left', front: false }, { y: GOAL_Y2 + 1, goal: 'left', front: true });
+    list.push({ y: -0.5, cx: 0 }, { y: -0.5, cx: CFG.FIELD_W }, { y: CFG.FIELD_H + 0.5, cx: 0 }, { y: CFG.FIELD_H + 0.5, cx: CFG.FIELD_W });
+    list.sort((a, c) => a.y - c.y);
+    for (const it of list) {
+      if (it.p) {
+        const p = it.p, sx = this.sx(p.x, p.y), sy = this.sy(p.y, 0);
+        if (sx < -100 || sx > W + 100 || sy < -40 || sy > H + 160) continue;
+        Sprites.player(ctx, p, sx, sy, this.k(p.y), t);
+      } else if (it.ball) {
+        // an ult shot in flight is a fireball (online, the striker's pose says it is one)
+        const fire = !b.owner && b.trailType === 'fire' && ((b.shot && b.shot.ult) || m.players.some((q) => q.ultShot));
+        const bsx = this.sx(b.x, b.y), bsy = this.sy(b.y, b.z + CFG.BALL_R);
+        if (fire) { Sprites.fireTrail(ctx, b, this, t); Sprites.fireball(ctx, bsx, bsy, CFG.BALL_R * this.k(b.y), b.vx, b.vy, t); }
+        else Sprites.trail(ctx, b, this, t);
+        Sprites.ball(ctx, b, bsx, bsy, this.k(b.y), t);
+      } else if (it.cx !== undefined) {
+        this.cornerFlag(ctx, it.cx, it.y, t);
+      } else {
+        this.goalPart(ctx, it.goal, it.front, b.netBulge[it.goal]);
+      }
+    }
+    FX.drawAir(ctx, this);
+    this.drawWeather(ctx, t);
+    if (m.net) this.drawNames(ctx, m); else this.drawChatOnly(ctx, m);
+    if (!m.demo) {
+      if (m.phase !== 'cele') this.drawIndicators(ctx, m);
+      if (m.phase === 'restart' && typeof Rules !== 'undefined') Rules.drawAim(ctx, m, t);
+      if (m.phase !== 'cele') this.drawSlideWarning(ctx, m, t);
+      if (Save.data.settings.minimap && m.phase !== 'timeup' && this.zoom < 1.05) this.drawMinimap(ctx, m);
+    }
+
+    if (m.phase === 'replay') this.drawReplay(ctx, m, t);
+    if (m.phase === 'cele') this.drawCutscene(ctx, m, t);
+    if (m.phase === 'reset') {
+      const u = m.phaseT / 0.45;
+      const cover = u < 0.5 ? easeOut(u * 2) : 1 - easeOut((u - 0.5) * 2);
+      ctx.fillStyle = '#2f7bff';
+      ctx.fillRect(0, 0, W * cover, H);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(W * cover - 10, 0, 10, H);
+    }
+    FX.drawScreen(ctx, W, H, this);
+  },
+
+  // cinematic bars, who scored and which celebration, while the scorer celebrates
+  drawCutscene(ctx, m, t) {
+    const W = this.W, H = this.H, c = m.cele;
+    const u = clamp(m.phaseT / 0.25, 0, 1), bar = Math.round(H * 0.1 * easeOut(u));
+    ctx.fillStyle = 'rgba(10, 12, 28, 0.88)';
+    ctx.fillRect(0, 0, W, bar); ctx.fillRect(0, H - bar, W, bar);
+    if (!c || !c.scorer || u < 1) return;
+    const s = c.scorer, size = clamp(H * 0.06, 17, 34), y = H - bar / 2, x0 = Math.max(18, W * 0.03);
+    const who = s === m.human && (m.net || s.isHuman) ? tl('YOU') : s.name || `#${s.number} ${TEAMS[s.team].name}`;
+    const def = CELEBRATIONS.find((x) => x.id === c.kind);
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left';
+    this.chunkyText(ctx, tl('GOAL!'), x0, y, size, '#ffe14d');
+    ctx.font = `400 ${size}px "Lilita One", system-ui, sans-serif`;
+    const gw = ctx.measureText(tl('GOAL!') + ' ').width;
+    this.chunkyText(ctx, who, x0 + gw, y, size * 0.8, s.team === 'blue' ? '#ffffff' : '#ffd0d3');
+    if (def) {
+      ctx.textAlign = 'right';
+      const pop = clamp((m.phaseT - 0.35) / 0.2, 0, 1);
+      this.chunkyText(ctx, def.name.toUpperCase(), W - x0, y, size * (0.7 + 0.3 * easeOut(pop)), '#46d9ff');
+    }
+    ctx.textAlign = 'center';
+  },
+
+  // cinematic bars + REPLAY tag while a goal replays
+  drawReplay(ctx, m, t) {
+    const W = this.W, H = this.H, bar = Math.round(H * 0.08);
+    ctx.fillStyle = 'rgba(10, 12, 28, 0.85)';
+    ctx.fillRect(0, 0, W, bar); ctx.fillRect(0, H - bar, W, bar);
+    const size = clamp(H * 0.065, 18, 36), y = H - bar / 2, x0 = Math.max(18, W * 0.03);
+    if ((t % 1) < 0.6) {
+      ctx.fillStyle = '#ff3a3f'; ctx.strokeStyle = OUTLINE; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(x0 + size * 0.3, y, size * 0.26, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    }
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    this.chunkyText(ctx, tl('REPLAY'), x0 + size * 0.75, y, size, '#ffffff');
+    const repR = x0 + size * 0.85 + ctx.measureText(tl('REPLAY')).width;
+    ctx.textAlign = 'right';
+    const kb = document.body.classList.contains('kb'), skip = kb ? tl('PRESS SPACE TO SKIP') : tl('TAP TO SKIP');
+    this.chunkyText(ctx, skip, W - x0, y, size * 0.55, '#ffe14d');
+    // where those words are, so the commentary along the bottom can keep out of their way
+    this.replayBoxes = [[0, H - bar, repR, H], [W - x0 - size * 0.1 - ctx.measureText(skip).width, H - bar, W, H]];
+    const rp = m.replay;
+    if (rp && m.rec && m.rec.frames.length) {
+      const span = rp.t1 - rp.t0;
+      const u = clamp(1 - (rp.t1 - rp.t) / Math.max(0.1, span), 0, 1);
+      ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.fillRect(0, H - bar, W, 4);
+      ctx.fillStyle = '#ffe14d'; ctx.fillRect(0, H - bar, W * u, 4);
+    }
+    ctx.textAlign = 'center';
+  },
+
+  // epic and legendary players carry a little orbit of sparkles
+  drawAura(ctx, m, t, x, y, R, S) {
+    const rar = m.humanRarity;
+    if (rar !== 'legendary' && rar !== 'epic') return;
+    const col = RARITIES[rar].color, n = rar === 'legendary' ? 3 : 2, h = m.human;
+    ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.5 * S; ctx.fillStyle = rar === 'legendary' ? '#ffe14d' : '#d7b8ff';
+    for (let i = 0; i < n; i++) {
+      const a = t * 2.2 + (i * Math.PI * 2) / n;
+      const px = x + Math.cos(a) * (R + 8 * S), py = y + Math.sin(a) * (R + 8 * S) * CFG.TILT - 3 * S;
+      const s = (5.6 + Math.sin(t * 8 + i * 2) * 1.2) * S;
+      ctx.beginPath();
+      for (let j = 0; j < 8; j++) {
+        const aa = (j * Math.PI) / 4, rr = j % 2 ? s * 0.38 : s;
+        ctx.lineTo(px + Math.cos(aa) * rr, py + Math.sin(aa) * rr);
+      }
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+    }
+    if (rar === 'legendary' && h.speed > 200 && m.phase === 'play' && Math.random() < 0.25) FX.ember(h.x, h.y, 4, pick([col, '#ffe14d', '#ffffff']));
+  },
+
+  // online: every outfield player's name floats over their head
+  drawNames(ctx, m) {
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const size = clamp(11 * this.S, 10, 15);
+    for (const p of m.players) {
+      if (!p.name || p.isKeeper) continue;
+      const x = this.sx(p.x, p.y), y = this.sy(p.y, 96) - (p.hopT > 0 ? 18 : 0);
+      if (x < -60 || x > this.W + 60 || y < -20 || y > this.H + 20) continue;
+      const me = p === m.human;
+      this.chunkyText(ctx, me ? tl('YOU') : p.name, x, y, size, me ? '#ffe14d' : p.team === 'blue' ? '#ffffff' : '#ffd0d3', Math.max(2.5, size * 0.28));
+      if (p.chat) this.drawChat(ctx, p.chat, x, y - size * 0.9, size);
+    }
+  },
+
+  // offline there are no name tags, but the chat bubbles still belong over people's heads
+  drawChatOnly(ctx, m) {
+    const size = clamp(11 * this.S, 10, 15);
+    for (const p of m.players) {
+      if (!p.chat || p.isKeeper) continue;
+      const x = this.sx(p.x, p.y), y = this.sy(p.y, 96) - (p.hopT > 0 ? 18 : 0);
+      if (x < -60 || x > this.W + 60 || y < -20 || y > this.H + 20) continue;
+      this.drawChat(ctx, p.chat, x, y - size * 0.9, size);
+    }
+  },
+
+  // quick chat: a speech bubble over the name for a few seconds (pops in, fades out)
+  drawChat(ctx, chat, x, y, size) {
+    if (chat.emote) { this.drawEmoteChat(ctx, chat, x, y, size); return; }
+    const age = (performance.now() - chat.at) / 1000;
+    if (age > 3.2 || age < 0) return;
+    const pop = age < 0.16 ? easeOut(age / 0.16) : 1, fade = age > 2.8 ? (3.2 - age) / 0.4 : 1;
+    const fs = size * 1.08, pad = fs * 0.55, h = fs * 1.55, tail = fs * 0.45;
+    ctx.save();
+    ctx.font = `400 ${fs}px "Lilita One", system-ui, sans-serif`;
+    const w = ctx.measureText(chat.text).width + pad * 2;
+    ctx.globalAlpha = Math.max(0, fade);
+    ctx.translate(x, y);
+    ctx.scale(pop, pop);
+    const lw = Math.max(2.5, fs * 0.2);
+    const shape = (dy) => {
+      Sprites.rr(ctx, -w / 2, -h - tail + dy, w, h, h * 0.36);
+      ctx.moveTo(-tail * 0.8, -tail + dy - 1);
+      ctx.lineTo(0, dy);
+      ctx.lineTo(tail * 0.8, -tail + dy - 1);
+    };
+    // hard shadow, then the bubble
+    ctx.fillStyle = OUTLINE; shape(lw * 1.1); ctx.fill();
+    ctx.fillStyle = '#ffffff'; ctx.strokeStyle = OUTLINE; ctx.lineWidth = lw; ctx.lineJoin = 'round';
+    Sprites.rr(ctx, -w / 2, -h - tail, w, h, h * 0.36); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-tail * 0.8, -tail - 1); ctx.lineTo(0, 0); ctx.lineTo(tail * 0.8, -tail - 1); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillRect(-tail * 0.8 + lw * 0.5, -tail - lw * 1.2, tail * 1.6 - lw, lw * 1.4); // the seam where the tail meets the bubble
+    ctx.fillStyle = OUTLINE; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(chat.text, 0, -tail - h / 2 + fs * 0.06);
+    ctx.restore();
+  },
+
+  // an emote (build 120): a square bubble with the emote playing inside it, a little longer than a line
+  drawEmoteChat(ctx, chat, x, y, size) {
+    if (typeof Emotes === 'undefined') return;
+    const age = (performance.now() - chat.at) / 1000;
+    if (age > 3.4 || age < 0) return;
+    const pop = age < 0.2 ? easeOut(age / 0.2) : 1, fade = age > 3 ? (3.4 - age) / 0.4 : 1;
+    const B = size * 4.6, tail = size * 0.55, lw = Math.max(2.5, size * 0.22);
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, fade);
+    ctx.translate(x, y);
+    ctx.scale(pop, pop);
+    const shape = (dy) => {
+      Sprites.rr(ctx, -B / 2, -B - tail + dy, B, B, B * 0.24);
+      ctx.moveTo(-tail * 0.8, -tail + dy - 1); ctx.lineTo(0, dy); ctx.lineTo(tail * 0.8, -tail + dy - 1);
+    };
+    ctx.fillStyle = OUTLINE; shape(lw * 1.1); ctx.fill();
+    ctx.fillStyle = '#ffffff'; ctx.strokeStyle = OUTLINE; ctx.lineWidth = lw; ctx.lineJoin = 'round';
+    Sprites.rr(ctx, -B / 2, -B - tail, B, B, B * 0.24); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-tail * 0.8, -tail - 1); ctx.lineTo(0, 0); ctx.lineTo(tail * 0.8, -tail - 1); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillRect(-tail * 0.8 + lw * 0.5, -tail - lw * 1.2, tail * 1.6 - lw, lw * 1.4);
+    // the emote, clipped to the inside of the bubble
+    ctx.save();
+    Sprites.rr(ctx, -B / 2 + lw / 2, -B - tail + lw / 2, B - lw, B - lw, B * 0.22); ctx.clip();
+    Emotes.draw(ctx, chat.emote, 0, -tail - B / 2, B * 1.02, age);
+    ctx.restore();
+    ctx.restore();
+  },
+
+  drawHumanRing(ctx, m, t) {
+    const h = m.human, S = this.k(h.y), x = this.sx(h.x, h.y), y = this.sy(h.y, 0);
+    const has = m.ball.owner === h;
+    const power = m.meter.blue >= CFG.POWER_MAX;
+    const R = 23 * S;
+    this.drawAura(ctx, m, t, x, y, R, S);
+    ctx.lineWidth = (has ? 4 : 3) * S;
+    ctx.strokeStyle = has ? '#8cf0ff' : '#46d9ff';
+    ctx.globalAlpha = has ? 0.28 : 0.15;
+    ctx.fillStyle = '#46d9ff';
+    ctx.beginPath(); ctx.ellipse(x, y, R, R * CFG.TILT, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.stroke();
+    if (power) {
+      const tr = Save.trail();
+      ctx.setLineDash([7 * S, 6 * S]); ctx.lineDashOffset = -t * 40 * (this.motionS || S); // (not x zoom: it jumped when the camera zoomed)
+      ctx.strokeStyle = tr.a === '#ffffff' ? '#bff3ff' : tr.a; ctx.lineWidth = 3 * S;
+      const r2 = R + 6 * S + Math.sin(t * 8) * 1.5 * S;
+      ctx.beginPath(); ctx.ellipse(x, y, r2, r2 * CFG.TILT, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    if (h.charging) {
+      const p = clamp(h.chargeT / CFG.CHARGE_FULL, 0, 1);
+      const level = h.chargeT < CFG.CHARGE_MED ? 0 : h.chargeT < CFG.CHARGE_STRONG ? 1 : 2;
+      const col = level === 2 ? (power ? Save.trail().a === '#ffffff' ? '#bff3ff' : Save.trail().a : '#46d9ff') : level === 1 ? '#ffe14d' : '#ffffff';
+      const r3 = R + 13 * S;
+      ctx.lineWidth = 7 * S; ctx.strokeStyle = 'rgba(22,26,51,0.45)';
+      ctx.beginPath(); ctx.ellipse(x, y, r3, r3 * CFG.TILT, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.lineWidth = 5.5 * S; ctx.strokeStyle = col; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.ellipse(x, y, r3, r3 * CFG.TILT, 0, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.max(0.02, p)); ctx.stroke();
+      ctx.lineCap = 'butt';
+      ctx.fillStyle = OUTLINE;
+      for (const th of [CFG.CHARGE_MED, CFG.CHARGE_STRONG]) {
+        const a = -Math.PI / 2 + (th / CFG.CHARGE_FULL) * Math.PI * 2;
+        ctx.beginPath(); ctx.arc(x + Math.cos(a) * r3, y + Math.sin(a) * r3 * CFG.TILT, 2.6 * S, 0, Math.PI * 2); ctx.fill();
+      }
+      if (level === 2) {
+        Sprites.glow(ctx, x, y - 20 * S, 46 * S, col, 0.35 + Math.sin(t * 20) * 0.08);
+        ctx.strokeStyle = col; ctx.lineWidth = 2 * S;
+        const r4 = r3 + (6 + Math.sin(t * 30) * 2) * S;
+        ctx.beginPath(); ctx.ellipse(x, y, r4, r4 * CFG.TILT, 0, 0, Math.PI * 2); ctx.stroke();
+      }
+    }
+    if (h.passCharging && h.passChargeT > CFG.PASS_CHARGE_TAP) {
+      const p = clamp((h.passChargeT - CFG.PASS_CHARGE_TAP) / (CFG.PASS_CHARGE_FULL - CFG.PASS_CHARGE_TAP), 0, 1);
+      const r5 = R + (h.charging ? 24 : 13) * S; // outside the shot ring when both are charging
+      ctx.lineWidth = 6 * S; ctx.strokeStyle = 'rgba(22,26,51,0.45)';
+      ctx.beginPath(); ctx.ellipse(x, y, r5, r5 * CFG.TILT, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.lineWidth = 4.5 * S; ctx.strokeStyle = p >= 0.85 ? '#ffe14d' : '#7fd0ff'; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.ellipse(x, y, r5, r5 * CFG.TILT, 0, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.max(0.02, p)); ctx.stroke();
+      ctx.lineCap = 'butt';
+    }
+  },
+
+  // a red "!" over you when a slide is coming for the ball you're carrying
+  drawSlideWarning(ctx, m, t) {
+    const h = m.human;
+    if (m.ball.owner !== h) return;
+    if (!slideIncoming(m, h, 170)) return;
+    const S = this.k(h.y), x = this.sx(h.x, h.y), y = this.sy(h.y, 92 + Math.sin(t * 30) * 3);
+    ctx.fillStyle = '#ff3a3f'; ctx.strokeStyle = OUTLINE; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(x, y, 12 * Math.max(0.8, S * 0.6), 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `900 ${16 * Math.max(0.8, S * 0.6)}px system-ui, sans-serif`;
+    ctx.fillText('!', x, y + 1);
+  },
+
+  _miniBox: null,
+  minimapBox(W, H) {
+    const kb = document.body.classList.contains('kb');
+    const c = this._miniBox;
+    if (c && c.W === W && c.H === H && c.kb === kb) return c.box;
+    const ratio = CFG.FIELD_H / CFG.FIELD_W;
+    let mw = Math.round(clamp(W * 0.16, 110, 190)), mh = Math.round(mw * ratio);
+    const edge = Math.max(16, W * 0.02);
+    let x0 = W - mw - edge, y0 = Math.max(10, H * 0.025);
+    const rect = (id) => { const e = document.getElementById(id); if (!e) return null; const r = e.getBoundingClientRect(); return r.width && r.height ? r : null; };
+    const sb = rect('scoreboard'), sprint = rect('btn-sprint');
+    if (!sb || (!kb && !sprint)) return { mw, mh, x0, y0 }; // HUD not laid out, or controls hidden for a replay: don't cache
+    // side by side with the scoreboard if there's room, otherwise underneath it
+    if (x0 < sb.right + 8) y0 = sb.bottom + 10;
+    // and never down into the SPRINT button
+    if (sprint && sprint.left < x0 + mw && y0 + mh + 6 > sprint.top) {
+      mh = Math.max(36, Math.floor(sprint.top - 6 - y0)); mw = Math.round(mh / ratio); x0 = W - mw - edge;
+    }
+    const box = { mw, mh, x0, y0 };
+    this._miniBox = { W, H, kb, box };
+    return box;
+  },
+
+  drawMinimap(ctx, m) {
+    const W = this.W, H = this.H;
+    const { mw, mh, x0, y0 } = this.minimapBox(W, H);
+    this.boxes = { minimap: [x0 - 3, y0 - 3, x0 + mw + 3, y0 + mh + 3] };
+    const sx = (x) => x0 + (x / CFG.FIELD_W) * mw, sy = (y) => y0 + (y / CFG.FIELD_H) * mh;
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = '#2f9a3c'; ctx.strokeStyle = OUTLINE; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.rect(x0 - 3, y0 - 3, mw + 6, mh + 6); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 1.5;
+    ctx.strokeRect(x0, y0, mw, mh);
+    ctx.beginPath(); ctx.moveTo(x0 + mw / 2, y0); ctx.lineTo(x0 + mw / 2, y0 + mh); ctx.stroke();
+    ctx.beginPath(); ctx.arc(x0 + mw / 2, y0 + mh / 2, mh * 0.13, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeRect(x0, sy(CFG.FIELD_H / 2 - CFG.BOX_W / 2), (CFG.BOX_D / CFG.FIELD_W) * mw, (CFG.BOX_W / CFG.FIELD_H) * mh);
+    ctx.strokeRect(x0 + mw - (CFG.BOX_D / CFG.FIELD_W) * mw, sy(CFG.FIELD_H / 2 - CFG.BOX_W / 2), (CFG.BOX_D / CFG.FIELD_W) * mw, (CFG.BOX_W / CFG.FIELD_H) * mh);
+    ctx.globalAlpha = 1;
+    // camera view box
+    const halfW = W / 2 / this.S, halfH = H / 2 / this.S / CFG.TILT;
+    ctx.strokeStyle = 'rgba(255,255,255,0.45)'; ctx.lineWidth = 1;
+    ctx.strokeRect(sx(this.cam.x - halfW), sy(this.cam.y / CFG.TILT - halfH), (halfW * 2 / CFG.FIELD_W) * mw, (halfH * 2 / CFG.FIELD_H) * mh);
+    for (const p of m.players) {
+      const kit = p.isKeeper ? KEEPER_KITS[p.team] : TEAMS[p.team];
+      ctx.fillStyle = kit.jersey; ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(clamp(sx(p.x), x0, x0 + mw), clamp(sy(p.y), y0, y0 + mh), p.isHuman ? 4.5 : 3.2, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      if (p.isHuman) { ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(sx(p.x), sy(p.y), 7, 0, Math.PI * 2); ctx.stroke(); }
+    }
+    ctx.fillStyle = '#ffffff'; ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(clamp(sx(m.ball.x), x0, x0 + mw), clamp(sy(m.ball.y), y0, y0 + mh), 3, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  },
+
+  drawIndicators(ctx, m) {
+    const b = m.ball, W = this.W, H = this.H, S = this.S;
+    const x = this.sx(b.x, b.y), y = this.sy(b.y, b.z);
+    const pad = 34;
+    if (x > pad && x < W - pad && y > pad + 40 && y < H - pad) return;
+    const cx = W / 2, cy = H / 2;
+    const dx = x - cx, dy = y - cy;
+    const sc = Math.min((W / 2 - pad) / Math.abs(dx || 1), (H / 2 - pad - 20) / Math.abs(dy || 1));
+    const ix = cx + dx * Math.min(1, sc), iy = cy + dy * Math.min(1, sc);
+    const a = Math.atan2(dy, dx);
+    ctx.save(); ctx.translate(ix, iy);
+    ctx.fillStyle = '#ffffff'; ctx.strokeStyle = OUTLINE; ctx.lineWidth = 3;
+    ctx.save(); ctx.rotate(a);
+    ctx.beginPath(); ctx.moveTo(22, 0); ctx.lineTo(10, -9); ctx.lineTo(10, 9); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.restore();
+    ctx.beginPath(); ctx.arc(0, 0, 11, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = OUTLINE; Sprites.pent(ctx, 0, 0, 4.5, 0);
+    ctx.restore();
+  },
+
+  // ---------------- home screen backdrop ----------------
+  // Where your player can stand on the home screen without covering a button: the old
+  // fixed spot (24% across, 86% down) put its feet on the bottom-left buttons and its cap
+  // on the logo on a phone held sideways. The room left between the account pill, the
+  // bottom row and the actions column is read from the page once per layout and cached.
+  _homeSpot: null,
+  homeSpot(W, H) {
+    const tall = H > W;
+    const base = { k: Math.min(H / 118, W / 190), px: tall ? W * 0.3 : W * 0.24, py: tall ? H * 0.62 : H * 0.86 };
+    const c = this._homeSpot;
+    if (c && c.W === W && c.H === H) return c.spot;
+    const home = document.getElementById('home');
+    const rect = (sel) => { const e = document.querySelector(sel); if (!e) return null; const r = e.getBoundingClientRect(); return r.width && r.height ? r : null; };
+    const bl = rect('.home-bl'), act = rect('.home-actions'), pill = rect('.home-char');
+    if (!home || home.hidden || !bl || !act || !pill) return base; // not laid out yet: try again next frame
+    // the sprite reaches about 30k left, 36k right, 74k up and 10k down from its feet
+    let floor = bl.top - 8, right = W - 8;
+    if (act.left > W * 0.35) right = act.left - 10; // actions column on the right (landscape)
+    else floor = Math.min(floor, act.top - 8);     // actions stacked across the middle (portrait)
+    // the lowest thing above the player that shares its column is the ceiling
+    let ceil = pill.bottom + 8;
+    const spanL = base.px - 30 * base.k, spanR = base.px + 36 * base.k;
+    for (const sel of ['.home-top', '#logo', '#home-record']) {
+      const r = rect(sel);
+      if (r && r.left < spanR && r.right > spanL && r.bottom < floor - 40) ceil = Math.max(ceil, r.bottom + 8);
+    }
+    const left = pill.left;
+    let { k, px, py } = base;
+    k = Math.max(1, Math.min(k, (floor - ceil) / 84, (right - left) / 66));
+    py = Math.min(floor - 10 * k, Math.max(py, ceil + 74 * k));
+    px = Math.max(left + 30 * k, Math.min(px, right - 36 * k));
+    const spot = { k, px, py };
+    this._homeSpot = { W, H, spot };
+    return spot;
+  },
+
+  drawHome(t, demo) {
+    const ctx = this.ctx, W = this.W, H = this.H;
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    if (demo) {
+      this.drawMatch(demo, t);
+      ctx.fillStyle = 'rgba(22, 26, 51, 0.38)';
+      ctx.fillRect(0, 0, W, H);
+    } else {
+      const bands = 12, bw = W / bands;
+      for (let i = 0; i < bands; i++) { ctx.fillStyle = i % 2 ? '#4fbd3b' : '#5acb45'; ctx.fillRect(i * bw, 0, bw + 1, H); }
+    }
+    const ch = Save.character();
+    const { k, px, py } = this.homeSpot(W, H);
+    const fake = {
+      team: 'blue', isKeeper: false, number: 10, look: Save.look(),
+      vx: 0, vy: 0, fx: 1, fy: 0.2, faceX: 1, kickT: 0, kickDur: 0.2, celebrateT: 0, diveT: 0, stunT: 0, recoverT: 0, seed: 1, runPhase: 0, sad: false,
+    };
+    const cyc = (t % 0.9) / 0.9;
+    if (cyc < 0.25) { fake.kickT = 0.2 * (1 - cyc / 0.25); }
+    ctx.fillStyle = 'rgba(20, 60, 20, 0.28)';
+    ctx.beginPath(); ctx.ellipse(px, py, 17 * k, 7.5 * k, 0, 0, Math.PI * 2); ctx.fill();
+    Sprites.player(ctx, fake, px, py, k, t);
+    const bz = Math.sin(cyc * Math.PI) * 55;
+    const bx = px + 20 * k, by = py - 6 * k;
+    ctx.fillStyle = 'rgba(20, 60, 20, 0.28)';
+    ctx.beginPath(); ctx.ellipse(bx, py, 9 * k * (1 - bz / 150), 4 * k * (1 - bz / 150), 0, 0, Math.PI * 2); ctx.fill();
+    Sprites.ball(ctx, { x: 0, y: 0, z: 0, vx: 1, vy: 0, roll: t * 6, shot: null, owner: null }, bx, by - bz * k * 0.9, k, t);
+  },
+};

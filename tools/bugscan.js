@@ -1,0 +1,805 @@
+// Bug scan — not loaded by the game. In the browser console on the game page:
+//   await new Promise((r) => { const s = document.createElement('script'); s.src = 'tools/bugscan.js'; s.onload = r; document.head.appendChild(s); });
+//   BS.sim({ matches: 40 })   // fuzzed headless matches with invariant checks
+//   await BS.ui()             // clicks through every screen / panel / flow and watches for errors
+//   await BS.restart()      // RESTART in the pause menu runs the same challenge or match again
+//   BS.overlap()            // nothing on screen sitting on top of anything else, at this window size
+// Findings come back grouped by kind with a few examples each.
+window.BS = {
+  // ---------- restart ----------
+  // Start each skill challenge, spend some of it, pause, press RESTART, and check it is the same
+  // challenge again and not a match. Then the same for an ordinary quick match.
+  // (needs a fronted tab only for the pause menu; run it from a page that is signed out or in)
+  async restart() {
+    const hits = [], wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const wasSeen = Save.data.tutorialSeen; Save.data.tutorialSeen = true;
+    // A match is paused on purpose when the page is hidden, and a pane or a phone can flip that at any
+    // moment, so an attempt during which the page was hidden proves nothing: it is tried again.
+    let flips = 0; const onVis = () => { flips++; }; document.addEventListener('visibilitychange', onVis);
+    try {
+      for (const id of ['gauntlet', 'targets', 'keeper']) {
+      let fair = false;
+      for (let attempt = 0; attempt < 5 && !fair; attempt++) {
+        const seen = flips, before = hits.length;
+        SkillRun.start(id); await wait(300);
+        if (SkillRun.run) SkillRun.run.score = 7;
+        if (Game.match.challenge) Game.match.challenge.t = 12;
+        UI.togglePause(); await wait(150);
+        document.getElementById('p-restart').click(); await wait(400);
+        const m = Game.match, run = SkillRun.run;
+        if (!run || run.id !== id) hits.push(id + ': restart is not running the same challenge (' + (run && run.id) + ')');
+        else if (run.score !== 0) hits.push(id + ': the score was not cleared (' + run.score + ')');
+        if (id === 'gauntlet' && !(m.challenge && m.challenge.id === 'gauntlet' && m.challenge.t < 6)) hits.push('gauntlet: restart did not start a fresh gauntlet');
+        if (id !== 'gauntlet' && !(m.pens && m.pens.chal && m.pens.chal.id === id)) hits.push(id + ': restart did not rebuild the shootout challenge');
+        if (!m.pens && !m.challenge) hits.push(id + ': restart built an ordinary match');
+        if (Game.state !== 'match') hits.push(id + ': state is ' + Game.state + ' after restart');
+        if (!document.getElementById('pause').hidden) hits.push(id + ': the pause menu is still open');
+        // a hidden page can only cause a failure (the auto-pause), never a pass: so a pass always counts
+        if (hits.length > before && (flips !== seen || document.hidden)) { hits.length = before; continue; } // not a fair attempt
+        fair = true;
+      }
+      if (!fair) hits.push(id + ': INCONCLUSIVE, the page kept being hidden (run this in a tab that is in front)');
+      }
+      Game.startMatch({ mode: 'quick', format: '2v2' }); await wait(300);
+      document.getElementById('intro').hidden = true; Game.state = 'match';
+      UI.togglePause(); await wait(150);
+      document.getElementById('p-restart').click(); await wait(300);
+      if (!(Game.match.mode === 'quick' && !Game.match.challenge && !Game.match.pens)) hits.push('quick match: restart is not a quick match');
+    } finally { Save.data.tutorialSeen = wasSeen; document.removeEventListener('visibilitychange', onVis); }
+    return { hits, count: hits.length };
+  },
+
+  // ---------- signature moves ----------
+  // Every move, fired from every edge of the pitch and from a corner. Three things must hold:
+  // it must not throw, it must leave you on the pitch, and if it is a move that keeps the ball
+  // the ball has to stay on the pitch too.
+  skills(opts = {}) {
+    const hits = [];
+    const prevHeadless = Game.headless, prevSkill = Save.data.skill, prevOwned = Save.data.owned.skill;
+    Game.headless = true;
+    Save.data.owned.skill = SKILLS.map((k) => k.id);
+    let fired = 0;
+    const spots = [
+      ['top', CFG.FIELD_W / 2, 6, 0, -1], ['bottom', CFG.FIELD_W / 2, CFG.FIELD_H - 6, 0, 1],
+      ['left', 6, CFG.FIELD_H / 2, -1, 0], ['right', CFG.FIELD_W - 6, CFG.FIELD_H / 2, 1, 0],
+      ['corner', 8, 8, -0.7, -0.7], ['middle', CFG.FIELD_W / 2, CFG.FIELD_H / 2, 1, 0],
+    ];
+    for (const k of SKILLS) {
+      try {
+        Save.data.skill = k.id;
+        Game.startMatch({ mode: 'quick', format: '1v1' });
+        const m = Game.match;
+        for (let i = 0; i < 160; i++) Match.step(m, CFG.STEP);
+        const p = m.human;
+        for (const [where, x, y, dx, dy] of spots) {
+          p.x = x; p.y = y; p.fx = dx; p.fy = dy; p.vx = 0; p.vy = 0;
+          p.skillCd = 0; p.skill = null; p.hopT = 0; p.fallT = 0; p.stunT = 0;
+          m.ball.owner = p; m.ball.x = x; m.ball.y = y; m.ball.z = 0;
+          performSkill(m, p, dx, dy);
+          fired++;
+          for (let i = 0; i < 30; i++) Match.step(m, CFG.STEP);
+          // the arena, not the painted pitch: standing outside the lines against the boards
+          // is normal here, and a player can walk there under their own steam
+          if (!insideArena(p.x, p.y)) {
+            hits.push(`${k.id} from the ${where}: ends outside the boards at ${Math.round(p.x)},${Math.round(p.y)}`);
+          }
+          if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) hits.push(`${k.id} from the ${where}: position stopped being a number`);
+        }
+      } catch (e) { hits.push(`${k.id}: threw — ${e.message}`); }
+    }
+    Game.headless = prevHeadless; Save.data.skill = prevSkill; Save.data.owned.skill = prevOwned;
+    Game.goHome();
+    return { moves: SKILLS.length, fired, hits: [...new Set(hits)] };
+  },
+
+  // ---------- fuzzed matches ----------
+  sim(opts = {}) {
+    const matches = opts.matches || 24;
+    const formats = opts.formats || ['1v1', '2v2', '3v3', '4v4', 'training'];
+    const diffs = opts.diffs || ['easy', 'normal', 'hard'];
+    const report = { matches: 0, steps: 0, issues: {}, examples: {}, errors: [], goals: 0, overtime: 0, ms: 0 };
+    const add = (kind, detail) => {
+      report.issues[kind] = (report.issues[kind] || 0) + 1;
+      const ex = report.examples[kind] || (report.examples[kind] = []);
+      if (ex.length < 4) ex.push(detail);
+    };
+    const prevHeadless = Game.headless, prevDiff = Save.data.settings.difficulty;
+    Game.headless = true;
+    const t0 = performance.now();
+    for (let i = 0; i < matches; i++) {
+      const format = formats[i % formats.length];
+      const club = CLUBS[i % CLUBS.length];
+      Save.data.settings.difficulty = diffs[i % diffs.length];
+      const autopilot = i % 4 === 3; // mostly a fuzzed human, sometimes all bots
+      const mode = format === 'training' ? 'training' : i % 5 === 1 ? 'cup' : i % 5 === 2 ? 'pro' : 'quick';
+      try {
+        this.runOne({ format, club, autopilot, mode, minutes: opts.minutes || 1, add, report, seed: i });
+      } catch (e) {
+        report.errors.push(`${format}/${club.id}/${mode}: ${e.message}\n${(e.stack || '').split('\n').slice(0, 4).join('\n')}`);
+      }
+      report.matches++;
+    }
+    Game.headless = prevHeadless;
+    Save.data.settings.difficulty = prevDiff;
+    Input.reset();
+    report.ms = Math.round(performance.now() - t0);
+    return report;
+  },
+
+  runOne(o) {
+    // PRO MATCH (build 115) is played on its own bigger pitch, and everything after on the normal one
+    const pro = o.mode === 'pro';
+    if (pro) Pitch.use('pro');
+    try { this.runMatch(o); } finally { if (pro) Pitch.use('normal'); }
+  },
+
+  runMatch({ format, club, autopilot, mode, minutes, add, report, seed }) {
+    const rng = mulberry32(1234 + seed * 77);
+    const m = Match.create({ format, club, autopilot, mode: format === 'training' ? 'training' : mode, minutes });
+    const W = CFG.FIELD_W, H = CFG.FIELD_H;
+    const tag = `${format}/${club.id}/${mode}${autopilot ? '/auto' : ''}`;
+    const maxSteps = (minutes * 60 + (mode === 'cup' ? 600 : CFG.OVERTIME_SECONDS) + 60) * 120;
+    const trainingSteps = 150 * 120;
+    let steps = 0, looseT = 0, holdT = 0, holder = null, lastScore = 0, phaseT = 0, lastPhase = m.phase;
+    const pocketT = new Map();
+    let stickT = 0, charge = 0, lineT = 0, farT = 0;
+    const stack = {};
+    // (a PRO MATCH restart: a bot takes it within 1.5 s, and yours is taken for you after 8)
+    const phaseMax = { kickoff: 2.5, goal: 3, reset: 1, timeup: 2.5, replay: 12, cele: CELE_TIME + 0.3, restart: 8.2 };
+    while (m.phase !== 'over') {
+      if (!autopilot) this.fuzz(m, rng, () => stickT, (v) => (stickT = v), () => charge, (v) => (charge = v));
+      Match.step(m, CFG.STEP);
+      steps++;
+      const b = m.ball, where = `${tag} t=${m.clock.toFixed(1)} phase=${m.phase}`;
+
+      // phases progress
+      if (m.phase !== lastPhase) { lastPhase = m.phase; phaseT = 0; } else phaseT += CFG.STEP;
+      if (phaseMax[m.phase] && phaseT > phaseMax[m.phase]) { add('phase-stuck', `${where} for ${phaseT.toFixed(1)}s`); phaseT = -999; }
+
+      // numbers stay numbers, things stay in the arena
+      for (const p of m.players) {
+        for (const k of ['x', 'y', 'vx', 'vy', 'fx', 'fy', 'stamina', 'slideCd', 'skillCd']) {
+          if (!Number.isFinite(p[k])) { add('nan-player', `${where} #${p.number}${p.team} ${k}=${p[k]}`); p[k] = 0; }
+        }
+        if (!insideArena(p.x, p.y)) add('player-outside', `${where} #${p.number}${p.team} ${p.x | 0},${p.y | 0}`);
+        if (p.stamina < -0.001 || p.stamina > 1.001) add('stamina-range', `${where} ${p.stamina}`);
+        if (p.slideCd > 4 || p.skillCd > 4 || p.slideCd < 0 || p.skillCd < 0) add('cooldown-range', `${where} slide=${p.slideCd} skill=${p.skillCd}`);
+        if (p.stunT > 3) add('stun-long', `${where} #${p.number}${p.team} ${p.stunT}`);
+        if (Math.hypot(p.vx, p.vy) > (p.isKeeper ? 1600 : 1100)) add('player-too-fast', `${where} #${p.number}${p.team} ${Math.hypot(p.vx, p.vy) | 0}`);
+        const inPocket = (p.x < -2 || p.x > W + 2) && m.phase === 'play' && !(p.isHuman && !autopilot);
+        const pt = inPocket ? (pocketT.get(p) || 0) + CFG.STEP : 0;
+        pocketT.set(p, pt);
+        if (pt > 4 && pt < 4 + CFG.STEP * 1.5) add(p.y > GOAL_Y1 && p.y < GOAL_Y2 ? 'bot-in-goal' : 'bot-behind-line', `${where} #${p.number}${p.team}${p.isKeeper ? ' GK' : ''} ${p.x | 0},${p.y | 0}`);
+        if (p.isKeeper && m.phase === 'play') {
+          const gx = ownGoalX(p.team);
+          if (Math.abs(p.x - gx) > 520) add('keeper-wander', `${where} ${p.team} GK ${p.x | 0},${p.y | 0}`);
+        }
+      }
+      for (const k of ['x', 'y', 'z', 'vx', 'vy', 'vz']) if (!Number.isFinite(b[k])) { add('nan-ball', `${where} ${k}=${b[k]}`); b[k] = 0; }
+      if (!insideArena(b.x, b.y)) add('ball-outside', `${where} ${b.x | 0},${b.y | 0},${b.z | 0} owner=${b.owner ? b.owner.number + b.owner.team : '-'}`);
+      if (b.z < -1 || b.z > 700) add('ball-z', `${where} z=${b.z}`);
+      if (!b.owner || dist(b.owner.x, b.owner.y, b.x, b.y) <= b.owner.r + CFG.BALL_R + 62) farT = 0;
+      if (b.owner) {
+        if (!m.players.includes(b.owner)) add('owner-foreign', where);
+        else if (dist(b.owner.x, b.owner.y, b.x, b.y) > b.owner.r + CFG.BALL_R + 62 && m.phase === 'play' && ++farT === 12) { const o = b.owner; add('owner-far', `${where} d=${dist(o.x, o.y, b.x, b.y) | 0} #${o.number}${o.team}${o.isKeeper ? ' GK' : ''}${o.isHuman ? ' YOU' : ''} skill=${o.skill ? o.skill.kind : '-'} slideT=${o.slideT.toFixed(2)} dive=${o.diveT.toFixed(2)} spd=${o.speed | 0} at ${o.x | 0},${o.y | 0} ball ${b.x | 0},${b.y | 0}`); }
+        if (b.shot && m.phase === 'play') add('owned-shot', where);
+      }
+
+      // score bookkeeping
+      const total = m.score.blue + m.score.red;
+      if (total !== m.goals.length) add('score-mismatch', `${where} score=${total} goals=${m.goals.length}`);
+      if (total > lastScore) {
+        report.goals += total - lastScore; if (total - lastScore > 1) add('double-goal', where); lastScore = total;
+        const g = m.goals[m.goals.length - 1];
+        const side = b.x > W / 2 ? 'blue' : 'red';
+        if (g.team !== side) add('goal-wrong-side', `${where} team=${g.team} ball=${b.x | 0}`);
+        if (g.own) { report.own = (report.own || 0) + 1; add(b.lastKicker && b.lastKicker.isHuman && !autopilot ? 'own-goal-fuzzer' : 'own-goal-bot', `${where} ${g.team} how=${g.how} lastKicker=${b.lastKicker ? b.lastKicker.team + (b.lastKicker.isKeeper ? ' GK' : b.lastKicker.isHuman ? ' YOU' : ' #' + b.lastKicker.number) : 'none'}`); }
+        if (g.scorer && g.scorer.team !== g.team) add('scorer-wrong-team', where);
+        if (g.assist && g.assist === g.scorer) add('self-assist', where);
+      }
+      if (m.time < 0 || m.time > m.duration) add('clock-range', `${where} ${m.time}`);
+      // a ball resting on the goal line inside the mouth that never counts
+      if (m.phase === 'play' && b.y > GOAL_Y1 && b.y < GOAL_Y2 && (b.x < CFG.BALL_R + 1 || b.x > W - CFG.BALL_R - 1) && !b.owner) lineT += CFG.STEP; else lineT = 0;
+      if (lineT > 2) { add('ball-on-line', `${where} ${b.x | 0},${b.y | 0}`); lineT = -999; }
+      // bodies stacked on top of each other
+      if (steps % 30 === 0 && m.phase === 'play') {
+        for (let i = 0; i < m.players.length; i++) for (let j = i + 1; j < m.players.length; j++) {
+          const p = m.players[i], q = m.players[j];
+          if (dist(p.x, p.y, q.x, q.y) < 6) { const key = p.id + ':' + q.id; stack[key] = (stack[key] || 0) + 1; if (stack[key] === 8) add('players-stacked', `${where} #${p.number}${p.team} + #${q.number}${q.team} at ${p.x | 0},${p.y | 0}`); } else if (stack[p.id + ':' + q.id]) stack[p.id + ':' + q.id] = 0;
+        }
+      }
+
+      // nothing freezes: a loose ball nobody touches, or one player camping on it
+      if (m.phase === 'play') {
+        if (!b.owner && Math.hypot(b.vx, b.vy) < 5) looseT += CFG.STEP; else looseT = 0;
+        if (looseT > 8) { add('ball-dead', `${where} ${b.x | 0},${b.y | 0}`); looseT = -999; }
+        if (b.owner && b.owner === holder) holdT += CFG.STEP; else { holder = b.owner; holdT = 0; }
+        if (holdT > 25 && !(holder && holder.isHuman && !autopilot)) { add('hold-forever', `${where} #${holder.number}${holder.team}${holder.isKeeper ? ' GK' : ''} at ${holder.x | 0},${holder.y | 0}`); holdT = -999; }
+      }
+
+      if (m.training ? steps > trainingSteps : steps > maxSteps) {
+        if (!m.training) add('never-ends', `${where} score ${m.score.blue}-${m.score.red} ot=${m.overtime}`);
+        break;
+      }
+    }
+    if (m.overtime) report.overtime++;
+    if (m.phase === 'over') {
+      if (!m.result) add('no-result', tag);
+      else if (!m.result.mvp) add('no-mvp', tag);
+      if (m.noDraw && m.score.blue === m.score.red) add('cup-draw', tag);
+      for (const p of m.players) if ((p.stats.tackles || 0) > (p.stats.slides || 0)) add('tackles>slides', `${tag} #${p.number}${p.team} ${p.stats.tackles}/${p.stats.slides}`);
+      if (m.result && !(m.result.coins > 0)) add('coins-nonpositive', tag);
+    }
+    report.steps += steps;
+  },
+
+  // a restless thumb: chases the ball, drives at goal, mashes buttons
+  fuzz(m, rng, getStick, setStick, getCharge, setCharge) {
+    const h = m.human, b = m.ball;
+    let st = getStick() - CFG.STEP;
+    if (st <= 0) {
+      st = 0.1 + rng() * 0.5;
+      const r = rng();
+      let tx, ty;
+      if (r < 0.45) { tx = b.x - h.x; ty = b.y - h.y; }
+      else if (r < 0.7) { tx = attackGoalX('blue') - h.x; ty = CFG.FIELD_H / 2 - h.y + (rng() - 0.5) * 400; }
+      else if (r < 0.85) { const a = rng() * Math.PI * 2; tx = Math.cos(a); ty = Math.sin(a); }
+      else { tx = 0; ty = 0; }
+      const l = Math.hypot(tx, ty);
+      Input.move.x = l ? tx / l : 0; Input.move.y = l ? ty / l : 0;
+      Input.sprintHeld = rng() < 0.5;
+    }
+    setStick(st);
+    if (rng() < 0.006) Input._passQueued = true;
+    if (rng() < 0.005) Input._skillQueued = true;
+    if (rng() < 0.006) Input._slideQueued = true;
+    if (h.ult >= CFG.ULT_MAX && rng() < 0.05) Input._ultQueued = true;
+    let c = getCharge();
+    if (c > 0) { c -= CFG.STEP; if (c <= 0) { Input._shootReleased = true; Input.shootHeld = false; } }
+    else if (rng() < (b.owner === h ? 0.02 : 0.003)) { Input._shootPressed = true; Input.shootHeld = true; c = rng() * 1.8; }
+    setCharge(c);
+  },
+
+  // ---------- drawing every state ----------
+  // headless matches, but every few steps the frame is drawn for real with a rotating look:
+  // each character, ball skin, stadium, trail and celebration, both quality levels
+  render(opts = {}) {
+    const matches = opts.matches || 12, errors = [], seen = new Set();
+    const prev = { headless: Game.headless, save: JSON.stringify(Save.data), quality: Render.quality };
+    Save.data.owned.character = CHARACTERS.map((c) => c.id); Save.data.owned.ball = BALLS.map((b) => b.id);
+    Save.data.owned.trail = TRAILS.map((t) => t.id); Save.data.owned.celebration = CELEBRATIONS.map((c) => c.id); Save.data.owned.accessory = ACCESSORIES.map((a) => a.id);
+    let frames = 0;
+    for (let i = 0; i < matches; i++) {
+      const ch = CHARACTERS[i % CHARACTERS.length];
+      Object.assign(Save.data, { character: ch.id, ball: BALLS[i % BALLS.length].id, trail: TRAILS[i % TRAILS.length].id, celebration: CELEBRATIONS[i % CELEBRATIONS.length].id, accessory: ACCESSORIES[i % ACCESSORIES.length].id });
+      Render.quality = i % 3;
+      Game.headless = false;
+      const club = CLUBS[i % CLUBS.length];
+      const m = Match.create({ format: ['1v1', '2v2', '3v3', '4v4'][i % 4], club, minutes: 1, autopilot: true });
+      m.autopilot = true; m.humanRarity = ch.rarity; m.meter.blue = CFG.POWER_MAX;
+      Game.headless = true;
+      Render.buildLayer();
+      let steps = 0;
+      while (m.phase !== 'over' && steps < 120 * 90) {
+        Match.step(m, CFG.STEP); steps++;
+        if (steps % 9 === 0 || m.phase !== 'play') {
+          if (m.phase !== 'play' && steps % 3) continue;
+          try { Render.updateCamera(m, CFG.STEP * 9); Render.drawMatch(m, steps / 120); frames++; seen.add(m.phase); }
+          catch (e) { if (errors.length < 8) errors.push(ch.id + '/' + m.phase + ': ' + e.message + ' ' + ((e.stack || '').split('\n')[1] || '')); }
+        }
+      }
+      // a few frames of each celebration pose and the home screen
+      try { for (const p of m.players) { p.celebrateT = 1.2; p.celebKind = CELEBRATIONS[i % CELEBRATIONS.length].id; } Render.drawMatch(m, 1); Render.drawHome(1, null); frames += 2; }
+      catch (e) { errors.push('celebrate/home: ' + e.message); }
+    }
+    Game.headless = prev.headless; Save.data = JSON.parse(prev.save); Render.quality = prev.quality; Render.resize();
+    return { frames, phases: [...seen], errors };
+  },
+
+  // Every celebration with every accessory, sampled through the whole animation.
+  // Draws into the same size as the shop card and reports exceptions or pixels cut by an edge.
+  celebrations() {
+    const cv = document.createElement('canvas'); cv.width = 160; cv.height = 150;
+    const g = cv.getContext('2d'), times = [0.04, 0.22, 0.48, 0.82, 1.2, 1.75, 2.25, 2.55];
+    const issues = [], oldScreen = Sprites.celebScreen, look = { ...Save.look() };
+    Sprites.celebScreen = () => {}; // screen-space confetti/words intentionally reach the card edge
+    let frames = 0;
+    try {
+      for (const c of CELEBRATIONS) for (const acc of [null, ...ACCESSORIES.map((a) => a.id)]) for (const e of times) {
+        const p = { team: 'blue', isKeeper: false, number: 10, look: { ...look, acc }, vx: CELE_MOVES[c.id] ? CELE_MOVES[c.id](e) : 0, vy: 0,
+          fx: 1, fy: 0.25, faceX: 1, kickT: 0, kickDur: 0.2, celebrateT: CELE_TIME - e, celebKind: c.id,
+          diveT: 0, stunT: 0, recoverT: 0, seed: 0, runPhase: e * 9, sad: false, slideT: 0, fallT: 0, hopT: 0 };
+        const pose = CELE_POSES[c.id](e, e, p), lying = pose && pose.lie, ground = 136 - (lying ? 10 : pose && pose.kneel ? 12 : 0), scale = pose && (pose.jump > 25 || c.id === 'snowangel') ? 0.72 : pose && Math.abs(pose.rot || 0) > 1 ? 0.82 : 0.9;
+        g.clearRect(0, 0, cv.width, cv.height);
+        // the very rule the game applies, not a copy of it
+        const fit = UI.celebFit(scale, pose, acc);
+        try { Sprites.player(g, p, 80 + (lying === 'back' ? 23 : lying === 'front' ? -20 : 0), ground - fit.up, fit.s, e); }
+        catch (err) { issues.push(`${c.id}/${acc || 'none'} @${e}: ${err.message}`); continue; }
+        const d = g.getImageData(0, 0, cv.width, cv.height).data;
+        let edge = false;
+        for (let y = 0; y < cv.height && !edge; y++) for (const x of [0, 1, cv.width - 2, cv.width - 1]) if (d[(y * cv.width + x) * 4 + 3]) { edge = true; break; }
+        for (let x = 0; x < cv.width && !edge; x++) for (const y of [0, 1, cv.height - 2, cv.height - 1]) if (d[(y * cv.width + x) * 4 + 3]) { edge = true; break; }
+        if (edge && issues.length < 30) issues.push(`${c.id}/${acc || 'none'} @${e}: touches preview edge`);
+        frames++;
+      }
+    } finally { Sprites.celebScreen = oldScreen; }
+    return { celebrations: CELEBRATIONS.length, accessories: ACCESSORIES.length + 1, frames, issues };
+  },
+  // ---------- screens and flows ----------
+  async ui() {
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const errors = [];
+    const onErr = (e) => errors.push(e.message || String(e.reason || e));
+    window.addEventListener('error', onErr);
+    window.addEventListener('unhandledrejection', onErr);
+    const log = [];
+    const step = async (name, fn, ms = 60) => {
+      try { await fn(); await wait(ms); log.push('ok  ' + name); } catch (e) { log.push('ERR ' + name + ': ' + e.message); errors.push(name + ': ' + e.message); }
+    };
+    const click = (el) => { if (!el) throw new Error('missing element'); el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); el.click(); };
+    const visible = (id) => !$(id).hidden;
+    const snapshot = JSON.stringify(Save.data);
+    Save.data.tutorialSeen = true;
+
+    await step('splash away', () => { $('splash').classList.add('gone'); $('splash').hidden = true; $('daily').hidden = true; });
+    await step('home refresh', () => UI.refreshHome());
+    for (const kind of ['play', 'stats', 'offers', 'customize', 'crates', 'collection', 'missions', 'settings', 'profile']) {
+      await step('open ' + kind, () => { UI.openModal(kind); if (!visible('modal')) throw new Error('modal hidden'); });
+      await step('close ' + kind, () => { click($('modal-close')); if (visible('modal')) throw new Error('modal still open'); });
+    }
+    await step('customize tabs', async () => {
+      UI.openModal('customize');
+      for (const t of ['character', 'ball', 'celebration', 'accessory', 'trail']) { click(document.querySelector(`[data-tab="${t}"]`)); await wait(30); }
+      UI.closeModal();
+    });
+    await step('a stat level costs what it says, and the next one costs more', async () => {
+      Save.data.coins = 999999; UI.openModal('stats');
+      const before = Save.stats().spd, cost = statCost(before), coins = Save.data.coins;
+      click(document.querySelector('[data-up="spd"]'));
+      if (Save.stats().spd !== before + 1) throw new Error('no level');
+      if (coins - Save.data.coins !== cost) throw new Error('charged ' + (coins - Save.data.coins) + ' not ' + cost);
+      if (statCost(before + 1) <= cost) throw new Error('the next level is not dearer');
+      if (statRating(before + 2) - statRating(before + 1) >= statRating(before + 1) - statRating(before)) throw new Error('the next level is not worth less');
+      Save.data.coins = 0; UI.panel_stats(document.getElementById('modal-body'));
+      const lv = Save.stats().spd;
+      click(document.querySelector('[data-up="spd"]'));
+      if (Save.stats().spd !== lv) throw new Error('levelled up with no coins');
+      UI.closeModal();
+    });
+    await step('many accessories at once, on and off', async () => {
+      Save.data.owned.accessory = [...new Set([...(Save.data.owned.accessory || []), 'shades', 'cape', 'halo'])];
+      Save.data.accessories = [];
+      UI._custTab = 'accessory'; UI.openModal('customize');
+      for (const id of ['shades', 'cape', 'halo']) click(document.querySelector(`.acc-opt[data-id="${id}"]`));
+      if (Save.accessories().length !== 3) throw new Error('wearing ' + Save.accessories().join(','));
+      click(document.querySelector('.acc-opt[data-id="cape"]'));
+      if (Save.wearing('cape') || Save.accessories().length !== 2) throw new Error('cape did not come off');
+      click(document.querySelector('.acc-opt[data-id="none"]'));
+      if (Save.accessories().length) throw new Error('not all off');
+      UI.closeModal();
+    });
+    const emptyBag = () => { Save.data.owned = { character: [], ball: [], trail: [], celebration: [], accessory: [] }; };
+    await step('a crate costs coins and gives something new', async () => {
+      emptyBag();
+      Save.data.coins = 20000;
+      const before = JSON.stringify(Save.data.owned);
+      const win = Crates.open('bronze');
+      if (!win || win.poor || win.empty) throw new Error('crate gave nothing');
+      if (Save.data.coins !== 18000) throw new Error('coins ' + Save.data.coins);
+      if (JSON.stringify(Save.data.owned) === before) throw new Error('nothing was added');
+      if (!Shop.owns(win.kind, win.id)) throw new Error('the prize is not owned');
+    });
+    await step('a crate never gives the same thing twice', async () => {
+      emptyBag();
+      Save.data.coins = 999999;
+      const seen = new Set();
+      for (let i = 0; i < 40; i++) {
+        const w = Crates.open('gold');
+        if (!w || w.empty) break;
+        const key = w.kind + ':' + w.id;
+        if (seen.has(key)) throw new Error('got ' + key + ' twice');
+        seen.add(key);
+      }
+    });
+    await step('a crate you cannot afford takes nothing', async () => {
+      emptyBag();
+      Save.data.coins = 10;
+      const owned = JSON.stringify(Save.data.owned);
+      const r = Crates.open('goatcrate');
+      if (!r || !r.poor) throw new Error('it opened anyway');
+      if (Save.data.coins !== 10) throw new Error('coins ' + Save.data.coins);
+      if (JSON.stringify(Save.data.owned) !== owned) throw new Error('something was added');
+    });
+    await step('the reel ends on the prize', async () => {
+      emptyBag();
+      Save.data.coins = 999999;
+      const crate = Crates.get('ruby');
+      const win = { kind: 'ball', id: 'classic' };
+      const { cells, at } = Crates.reel(crate, win);
+      if (cells.length < 20) throw new Error('reel too short');
+      if (cells[at].id !== win.id) throw new Error('the prize is not where the marker lands');
+    });
+    await step('a crate with nothing left charges nothing', async () => {
+      // The bag is borrowed, not taken. Leaving it full means every crate reads EMPTY from then
+      // on, in a save that is written to disk — which looks exactly like a broken crates panel.
+      const bag = JSON.parse(JSON.stringify(Save.data.owned || {}));
+      const purse = Save.data.coins;
+      try {
+        // every kind a crate deals in, skills included — miss one and the crate is not empty
+        Save.data.owned = { character: CHARACTERS.map((c) => c.id), ball: BALLS.map((b) => b.id), trail: TRAILS.map((t) => t.id), celebration: CELEBRATIONS.map((c) => c.id), accessory: ACCESSORIES.map((a) => a.id), skill: SKILLS.map((k) => k.id) };
+        Save.data.coins = 999999;
+        const r = Crates.open('bronze');
+        if (!r || !r.empty) throw new Error('it gave something out of an empty crate');
+        if (Save.data.coins !== 999999) throw new Error('it charged for nothing');
+      } finally {
+        Save.data.owned = bag;
+        Save.data.coins = purse;
+        Save.write();
+      }
+    });
+    await step('a job pays once, and only when it is done', async () => {
+      Save.data.missions = null; Save.data.coins = 0;
+      const board = Missions.state(), job = board.daily[0], def = Missions.def(job.id);
+      if (Missions.claim(job.id) !== 0) throw new Error('paid before it was done');
+      job.n = def.n;
+      if (Missions.claim(job.id) !== def.coins) throw new Error('wrong money');
+      if (Missions.claim(job.id) !== 0) throw new Error('paid twice');
+      if (Save.data.coins !== def.coins) throw new Error('coins ' + Save.data.coins);
+    });
+    await step('change your look', async () => {
+      UI._custTab = 'character'; UI.openModal('customize');
+      click(document.querySelector('[data-look="hair"][data-v="afro"]'));
+      click(document.querySelector('[data-look="build"][data-v="slim"]'));
+      if (Save.look().hair !== 'afro' || !Save.look().thin) throw new Error('look not changed');
+      UI.closeModal();
+    });
+    await step('equip a ball you own', async () => {
+      Save.data.owned.ball = [...new Set([...(Save.data.owned.ball || []), 'beach'])];
+      UI._custTab = 'ball'; UI.openModal('customize');
+      click(document.querySelector('.trail-opt[data-id="beach"]'));
+      if (Save.ball().id !== 'beach') throw new Error('ball not equipped');
+      UI.closeModal();
+    });
+    await step('settings toggles', async () => {
+      UI.openModal('settings');
+      for (const g of document.querySelectorAll('.seg')) for (const b of g.querySelectorAll('button')) { click(b); await wait(5); }
+      // put sensible values back
+      Object.assign(Save.data.settings, { difficulty: 'normal', minutes: 3, graphics: 'auto', controls: 'auto', vibration: true, minimap: true, replays: true });
+      Render.quality = 0; Render.resize(); UI.applyControls();
+      UI.closeModal();
+    });
+    await step('daily claim', async () => {
+      Save.data.daily = { last: null, streak: 0 };
+      const before = Save.data.coins;
+      UI.maybeDaily();
+      if (!visible('daily')) throw new Error('daily not shown');
+      click($('daily-claim'));
+      if (Save.data.coins !== before + DAILY[0]) throw new Error('coins not added');
+      if (Daily.pending()) throw new Error('still pending');
+    });
+    await step('daily streak math', () => {
+      const d = new Date(); d.setDate(d.getDate() - 1);
+      Save.data.daily = { last: Daily.key(d), streak: 7 };
+      const p = Daily.pending();
+      if (!p || p.day !== 1) throw new Error('day 7 should loop to 1, got ' + JSON.stringify(p));
+      Save.data.daily = { last: Daily.key(d), streak: 3 };
+      if (Daily.pending().day !== 4) throw new Error('streak did not continue');
+      d.setDate(d.getDate() - 2);
+      Save.data.daily = { last: Daily.key(d), streak: 3 };
+      if (Daily.pending().day !== 1) throw new Error('missed day should reset');
+      const f = new Date(); f.setDate(f.getDate() + 2);
+      Save.data.daily = { last: Daily.key(f), streak: 3 };
+      if (Daily.pending() !== null) throw new Error('future date should not pay');
+      Save.data.daily = { last: Daily.key(), streak: 1 };
+    });
+    await step('profile claim', async () => {
+      Save.data.goals = Math.max(1, Save.data.goals);
+      delete Save.data.achievements.goal1;
+      const before = Save.data.coins;
+      UI.openModal('profile');
+      click(document.querySelector('.claim[data-id="goal1"]'));
+      if (Save.data.coins !== before + 50) throw new Error('claim did not pay');
+      if (document.querySelector('.claim[data-id="goal1"]')) throw new Error('claim button still there');
+      if (Achievements.claim('goal1')) throw new Error('double claim paid');
+      UI.closeModal();
+    });
+
+    for (const format of ['1v1', '2v2', '3v3', '4v4']) {
+      await step(`quick ${format}: start`, () => { Save.data.format = format; Game.startMatch({ mode: 'quick', club: Clubs.random() }); if (Game.state !== 'intro') throw new Error('state ' + Game.state); });
+      await step(`quick ${format}: kick off`, () => { click($('intro-go')); if (Game.state !== 'match') throw new Error('state ' + Game.state); }, 400);
+      await step(`quick ${format}: pause`, () => { click($('btn-pause')); if (Game.state !== 'paused' || !visible('pause')) throw new Error('not paused'); });
+      await step(`quick ${format}: resume`, () => { click($('p-resume')); if (Game.state !== 'match') throw new Error('not resumed'); }, 300);
+      await step(`quick ${format}: finish`, async () => {
+        const m = Game.match; m.time = 0.05; m.score.blue = 2; m.goals.push({ team: 'blue' }, { team: 'blue' }); m.ball.shot = null;
+        for (let i = 0; i < 80 && Game.state !== 'results'; i++) await wait(50);
+        if (Game.state !== 'results' || !visible('results')) throw new Error('no results, state ' + Game.state + ' phase ' + m.phase);
+      });
+      await step(`quick ${format}: play again`, () => { click($('r-again')); if (Game.state !== 'intro') throw new Error('state ' + Game.state); });
+      await step(`quick ${format}: restart from pause`, () => { Game.kickOff(); click($('btn-pause')); click($('p-restart')); if (Game.state !== 'intro') throw new Error('state ' + Game.state); });
+      await step(`quick ${format}: quit`, () => { Game.kickOff(); click($('btn-pause')); click($('p-quit')); if (Game.state !== 'home' || !visible('home')) throw new Error('not home'); }, 200);
+    }
+
+    // PRO MATCH: 1v1 picked plays 2v2 on the big pitch; a throw-in; and every way out is the normal pitch
+    await step('pro: the chooser (1v1 picked shows 2v2)', () => { Save.data.format = '1v1'; UI.openModal('play'); click(document.querySelector('[data-mode="pro"]')); const sel = document.querySelector('[data-pf].sel'); if ($('modal').dataset.kind !== 'promode' || !sel || sel.dataset.pf !== '2v2' || !document.querySelector('[data-pro="online"]')) throw new Error(`modal ${$('modal').dataset.kind} picked ${sel && sel.dataset.pf}`); });
+    await step('pro: start offline (2v2, big pitch)', () => { click(document.querySelector('[data-pro="offline"]')); const m = Game.match; if (Game.state !== 'intro' || !m.rules || m.format !== '2v2' || Pitch.size !== 'pro' || CFG.FIELD_W !== 3000) throw new Error(`state ${Game.state} rules ${m && m.rules} format ${m && m.format} pitch ${Pitch.size}`); });
+    await step('pro: kick off', () => { click($('intro-go')); if (Game.state !== 'match') throw new Error('state ' + Game.state); }, 600);
+    await step('pro: a throw-in, taken', async () => {
+      const m = Game.match, b = m.ball; m.phase = 'play';
+      if (b.owner) loseBall(m, b.owner, 0.3);
+      b.x = 1500; b.y = -20; b.vx = 0; b.vy = -100; b.lastTouchTeam = 'red'; b.shot = null;
+      for (let i = 0; i < 40 && m.phase !== 'restart'; i++) await wait(25);
+      if (m.phase !== 'restart' || !m.restart || m.restart.kind !== 'throw' || m.restart.team !== 'blue') throw new Error('no throw-in: ' + m.phase);
+      for (let i = 0; i < 220 && m.phase === 'restart'; i++) await wait(50);
+      if (m.phase !== 'play') throw new Error('never taken: ' + m.phase);
+    });
+    await step('pro: pause, resume', () => { click($('btn-pause')); if (Game.state !== 'paused') throw new Error('not paused'); click($('p-resume')); if (Game.state !== 'match') throw new Error('not resumed'); }, 300);
+    await step('pro: finish', async () => {
+      const m = Game.match; m.phase = 'play'; m.restart = null; m.time = 0.05; m.score.blue = 2; m.goals.push({ team: 'blue' }, { team: 'blue' }); m.ball.shot = null;
+      for (let i = 0; i < 80 && Game.state !== 'results'; i++) await wait(50);
+      if (Game.state !== 'results' || !visible('results')) throw new Error('no results, state ' + Game.state + ' phase ' + m.phase);
+    });
+    await step('pro: play again is pro', () => { click($('r-again')); const m = Game.match; if (Game.state !== 'intro' || !m.rules || Pitch.size !== 'pro') throw new Error(`state ${Game.state} rules ${m && m.rules}`); });
+    await step('pro: quit is the normal pitch', () => { Game.kickOff(); click($('btn-pause')); click($('p-quit')); if (Game.state !== 'home' || Pitch.size !== 'normal' || CFG.FIELD_W !== 2400) throw new Error(`state ${Game.state} pitch ${Pitch.size}`); }, 200);
+    await step('pro: then a quick match is normal', () => { Save.data.format = '2v2'; Game.startMatch({ mode: 'quick', club: Clubs.random() }); if (Game.match.rules || Pitch.size !== 'normal') throw new Error('pitch ' + Pitch.size); Game.goHome(); });
+
+    await step('cup: run to champion', async () => {
+      Cup.slot().cup = null; const trophies = Save.data.trophies || 0;
+      Cup.start();
+      for (let round = 0; round < 3; round++) {
+        Game.startMatch({ mode: 'cup' });
+        Game.kickOff();
+        const m = Game.match;
+        if (m.club.id !== Cup.last().opponents[round]) throw new Error('wrong opponent in round ' + round);
+        m.time = 0.05; m.score.blue = 1; m.goals.push({ team: 'blue' }); m.ball.shot = null;
+        for (let i = 0; i < 80 && Game.state !== 'results'; i++) await wait(50);
+        if (Game.state !== 'results') throw new Error('no results in round ' + round);
+      }
+      if ((Save.data.trophies || 0) !== trophies + 1) throw new Error('trophy not awarded');
+      if (Cup.state()) throw new Error('cup still active');
+      Game.goHome();
+    });
+    await step('cup: lose is out', async () => {
+      Cup.start(); Game.startMatch({ mode: 'cup' }); Game.kickOff();
+      const m = Game.match; m.time = 0.05; m.score.red = 1; m.goals.push({ team: 'red' }); m.ball.shot = null;
+      for (let i = 0; i < 80 && Game.state !== 'results'; i++) await wait(50);
+      if (Cup.state()) throw new Error('cup still active after a loss');
+      click($('r-home'));
+    });
+    await step('training: no clock, quit', async () => {
+      Game.startMatch({ mode: 'training', club: Clubs.get('denmark') }); Game.kickOff(); await wait(600);
+      const m = Game.match;
+      if (!m.training || m.time !== m.duration) throw new Error('clock moved in training');
+      m.ball.owner = null; m.ball.x = CFG.FIELD_W + 30; m.ball.y = CFG.FIELD_H / 2; m.ball.lastKicker = m.human;
+      for (let i = 0; i < 80 && m.phase !== 'kickoff'; i++) await wait(50);
+      if (m.phase !== 'kickoff' && m.phase !== 'play') throw new Error('training stuck in ' + m.phase);
+      if (Game.match.ball.owner && Game.match.ball.owner.team !== 'blue') throw new Error('red kicked off in training');
+      Game.goHome();
+    });
+    await step('replay: plays and skips', async () => {
+      Game.startMatch({ mode: 'quick', club: Clubs.get('denmark') }); Game.kickOff(); await wait(2600);
+      const m = Game.match, h = m.human;
+      m.phase = 'play';
+      m.ball.owner = null; m.ball.shot = null; m.ball.lastKicker = h; m.ball.x = CFG.FIELD_W + 20; m.ball.y = CFG.FIELD_H / 2;
+      for (let i = 0; i < 100 && m.phase !== 'replay'; i++) await wait(50);
+      if (m.phase !== 'replay') throw new Error('no replay, phase ' + m.phase);
+      if (!$('hud').classList.contains('replaying')) throw new Error('hud not in replay mode');
+      await wait(400);
+      click($('replay-skip'));
+      await wait(200);
+      if (m.phase === 'replay') throw new Error('skip did not work');
+      for (let i = 0; i < 40 && m.phase !== 'play'; i++) await wait(50);
+      if (m.phase !== 'play') throw new Error('did not return to play: ' + m.phase);
+      if ($('hud').classList.contains('replaying')) throw new Error('hud stuck in replay mode');
+      Game.goHome();
+    });
+    await step('how to play', () => { click($('btn-howto')); if (!visible('howto')) throw new Error('howto hidden'); if ($('tut-canvas').width < 2) throw new Error('tutorial canvas never sized'); click($('tut-skip')); if (visible('howto')) throw new Error('howto stuck'); });
+
+    window.removeEventListener('error', onErr);
+    window.removeEventListener('unhandledrejection', onErr);
+    Save.data = JSON.parse(snapshot); Save.write(); UI.refreshHome();
+    return { errors, failed: log.filter((l) => l.startsWith('ERR')), steps: log.length };
+  },
+
+  // ---------- nothing on top of anything else ----------
+  // The home screen and the match HUD pin their pieces to the corners, so a long name, a big
+  // number or one more pill can put two of them in the same place. This measures the boxes
+  // instead of squinting at a screenshot. It checks the size the window is NOW: resize and run
+  // it again (375x812, 320x480, 640x360, 907x520, 1280x720 are the ones that used to break).
+  OVERLAP_SEL: ['.home-char', '.home-top', '.home-record', '.home-actions', '.home-bl', '.howto-btn', '#logo',
+    '.party-bar', '#toast', '.watch-bar', '#scoreboard', '#commentary', '.action', '#joy-base', '.ult-btn',
+    '.icon-btn', '.chat-feed', '#kb-legend', '#replay-skip', '#tip', '#minimap', '#net-ping', '.badge'].join(', '),
+  // a card that sits over everything else is meant to: the things inside it are its own business
+  OVERLAY_SEL: ['#pause', '#results', '#modal', '#intro', '#rotate', '#daily', '#auth', '#splash',
+    '#howto', '#lobby', '#queue', '#trophy', '#challenge-end', '#party-invite'].join(', '),
+
+  overlapBoxes() {
+    const out = [];
+    for (const el of document.querySelectorAll(this.OVERLAP_SEL)) {
+      if (el.hidden || el.closest('[hidden]') || el.closest(this.OVERLAY_SEL)) continue;
+      const cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden' || Number(cs.opacity) < 0.05) continue;
+      const b = el.getBoundingClientRect();
+      if (b.width < 2 || b.height < 2) continue;
+      out.push({ el, b, name: el.id ? '#' + el.id : '.' + (String(el.className).split(' ')[0] || el.tagName.toLowerCase()) });
+    }
+    return out;
+  },
+
+  // The HUD is half DOM and half drawn on the canvas, and the two halves cannot see each other.
+  // This puts both on one map: the buttons and bars from the page, the scoreboard, minimap, power
+  // bar and shootout board from the canvas, and reports anything sitting on anything else or
+  // hanging off the screen.
+  canvasBoxes() {
+    const out = [];
+    const add = (src) => { for (const k in src || {}) if (src[k]) out.push({ name: 'canvas:' + k, b: { left: src[k][0], top: src[k][1], right: src[k][2], bottom: src[k][3], width: src[k][2] - src[k][0], height: src[k][3] - src[k][1] }, el: null }); };
+    if (Game.match && Game.match.pens && Game.state !== 'home') add(Pens.boxes);
+    add(Render.boxes);
+    return out.filter((o) => o.b.width > 2 && o.b.height > 2);
+  },
+
+  // Inside an open panel: anything sitting on top of anything else, or so close that the hard
+  // shadow under a button lands on the text below it. Two things in the same card are left alone —
+  // a rarity tag over a portrait is meant to be there; a close button over the first row is not.
+  panelFit(gap = 5) {
+    const root = document.querySelector('#modal .panel');
+    if (!root || $('modal').hidden) return { open: false, hits: [] };
+    const vis = (e) => {
+      const cs = getComputedStyle(e), b = e.getBoundingClientRect();
+      return !e.hidden && cs.display !== 'none' && cs.visibility !== 'hidden' && Number(cs.opacity) > 0.05 && b.width > 3 && b.height > 3;
+    };
+    const els = [...root.querySelectorAll('*')].filter((e) => (!e.children.length || /^(BUTTON|LABEL)$/.test(e.tagName)) && vis(e));
+    const name = (e) => (e.id ? '#' + e.id : e.tagName.toLowerCase() + (e.className ? '.' + String(e.className).split(' ')[0] : ''))
+      + (e.textContent && e.textContent.trim().length < 22 ? '[' + e.textContent.trim().slice(0, 18) + ']' : '');
+    // only a shadow that falls outside the box can land on anything
+    const shadow = (e) => { const s = getComputedStyle(e).boxShadow || ''; return s.includes('px') && !s.includes('inset') ? 4 : 0; };
+    const hits = [];
+    for (let i = 0; i < els.length; i++) for (let j = i + 1; j < els.length; j++) {
+      const A = els[i], B = els[j];
+      if (A.contains(B) || B.contains(A) || A.parentElement === B.parentElement) continue;
+      const a = A.getBoundingClientRect(), b = B.getBoundingClientRect();
+      if (Math.min(a.right, b.right) - Math.max(a.left, b.left) <= 2) continue;
+      const below = b.top - a.bottom, above = a.top - b.bottom;
+      const pad = Math.max(shadow(A), shadow(B));
+      if (below < -2 && above < -2) hits.push(name(A) + ' on top of ' + name(B));
+      else if (below >= -2 && below < pad) hits.push(name(A) + ' is ' + Math.round(below) + 'px above ' + name(B) + ', its shadow lands on it');
+      else if (above >= -2 && above < pad) hits.push(name(B) + ' is ' + Math.round(above) + 'px above ' + name(A) + ', its shadow lands on it');
+    }
+    return { open: true, kind: $('modal').dataset.kind, hits: [...new Set(hits)] };
+  },
+
+  // every panel, at this window size
+  async panelSweep() {
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const was = Save.data.tutorialSeen;
+    Save.data.tutorialSeen = true;
+    const bad = [];
+    for (const kind of ['play', 'stats', 'offers', 'customize', 'crates', 'collection', 'missions', 'settings', 'profile']) {
+      UI.openModal(kind);
+      await wait(260);
+      const r = this.panelFit();
+      if (r.hits.length) bad.push(kind + ': ' + r.hits.join(' | '));
+      UI.closeModal();
+    }
+    Save.data.tutorialSeen = was;
+    return { size: innerWidth + 'x' + innerHeight, bad };
+  },
+
+  fit(slack = 2) {
+    const boxes = [...this.overlapBoxes(), ...this.canvasBoxes()], hits = [];
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        const A = boxes[i], B = boxes[j];
+        if (A.el && B.el && (A.el.contains(B.el) || B.el.contains(A.el))) continue;
+        const x = Math.min(A.b.right, B.b.right) - Math.max(A.b.left, B.b.left);
+        const y = Math.min(A.b.bottom, B.b.bottom) - Math.max(A.b.top, B.b.top);
+        if (x > slack && y > slack) hits.push(`${A.name} on ${B.name} (${Math.round(x)}x${Math.round(y)}px)`);
+      }
+    }
+    for (const { b, name } of boxes) {
+      if (b.left < -slack || b.top < -slack || b.right > innerWidth + slack || b.bottom > innerHeight + slack) {
+        hits.push(`${name} off the screen (${Math.round(b.left)},${Math.round(b.top)} to ${Math.round(b.right)},${Math.round(b.bottom)} in ${innerWidth}x${innerHeight})`);
+      }
+    }
+    return { size: innerWidth + 'x' + innerHeight, screen: Game.state, showing: boxes.length, hits };
+  },
+
+  // every screen that has a HUD on it, at this window size
+  async fitSweep(touch = true) {
+    // the canvas boxes are only true at the size the renderer last drew at
+    Render.resize(); Pens._lay = null; if (UI.measureHud) UI.measureHud();
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const out = [];
+    const was = Save.data.tutorialSeen;
+    Save.data.tutorialSeen = true;
+    document.body.classList.toggle('kb', !touch);
+    $('splash').hidden = true;
+    const clip = (where) => { const c = this.clipped(); if (c.hits.length) out.push({ where: where + ' (cut-off text)', size: c.size, hits: c.hits }); };
+    const line = (what) => {
+      const c = $('commentary');
+      if (Game.match && Game.match.pens) { c.classList.remove('show', 'big'); return; } // a shootout says it on the pitch
+      if (UI.placeCommentary) UI.placeCommentary(); // where the game would put it
+      c.classList.add('show'); c.classList.toggle('big', what === 'big');
+      $('commentary-line').textContent = what === 'big' ? 'WHAT A BALL THROUGH THE MIDDLE — HE IS CLEAN THROUGH ON GOAL!' : 'Clean as a whistle and twice as loud.';
+    };
+    const look = async (name) => { await wait(90); out.push({ where: name, ...this.fit() }); clip(name); };
+
+    UI.closeAll(); Game.goHome(); await wait(120);
+    Game.stepDemo(0.016); Render.drawHome(Game.t, Game.demo); // this pane throttles rAF: draw it by hand
+    await look('home');
+
+    Game.startMatch({ mode: 'quick', format: '4v4' });
+    await wait(150); $('intro').hidden = true; Game.state = 'match';
+    for (let i = 0; i < 600; i++) Match.step(Game.match, CFG.STEP);
+    UI.updateHUD(Game.match); Render.drawMatch(Game.match, Game.t);
+    line('big'); await look('match');
+    Game.match.human.ult = CFG.ULT_MAX; UI.updateHUD(Game.match); await look('match + ult ready');
+
+    Game.startMatch({ mode: 'pens' });
+    await wait(150); $('intro').hidden = true; Game.state = 'match';
+    const P = Game.match.pens;
+    for (const phase of ['ready', 'aim', 'after']) {
+      P.phase = phase; P.team = 'blue'; P.t = phase === 'aim' ? 0.5 : 0.2; P.power = 0.6; P.holding = phase === 'aim';
+      P.say = phase === 'after' ? ['GOAL!', '#ffe14d'] : null; P.n = 3;
+      P.shot = phase === 'after' ? { T: 0.35, ax: 0, az: 0.5, q: 1 } : null; P.dive = null;
+      Commentary.duck ? Commentary.duck(P) : 0; line('big');
+      Pens.draw(Game.match, 0.016, Game.t);
+      await look('pens: ' + phase);
+    }
+    P.team = 'red'; P.phase = 'runup'; P.t = 0.2; P.dive = null; Commentary.duck ? Commentary.duck(P) : 0;
+    Pens.draw(Game.match, 0.016, Game.t); await look('pens: facing one');
+
+    Game.goHome(); Save.data.tutorialSeen = was;
+    const bad = out.filter((o) => o.hits.length);
+    return { sizes: out[0] && out[0].size, checked: out.length, bad, clean: out.length - bad.length };
+  },
+
+  // A word that does not fit the pill holding it.
+  //
+  // These controls are a coloured button with a single label inside. They do not clip — overflow
+  // is visible — so a label too wide for its button hangs out over the edge and into whatever is
+  // next to it. CUSTOMIZE shipped like that: the four buttons under PLAY each took a quarter of
+  // the row and were allowed to shrink below the word inside them.
+  //
+  // Only these are checked. A heavy text-shadow makes scrollHeight a little taller than the line,
+  // the SHOOT label is meant to be wider than the round face above it, and the OVR badge is meant
+  // to hang off the profile card, so asking every element on the page gives three wrong answers
+  // for every right one.
+  PILL_SEL: '.home-row .mid-btn, .panel .mid-btn, .panel .big-btn, .tog, .tabs button, .formats button, .seg button, .auth-tabs button',
+
+  clipped(slack = 1) {
+    const out = [];
+    for (const el of document.querySelectorAll(this.PILL_SEL)) {
+      const cs = getComputedStyle(el);
+      if (el.hidden || cs.display === 'none' || cs.visibility === 'hidden' || Number(cs.opacity) < 0.05) continue;
+      const b = el.getBoundingClientRect();
+      if (b.width < 4 || b.height < 4) continue;
+      const txt = (el.textContent || '').trim();
+      if (!txt) continue;
+      const over = el.scrollWidth - el.clientWidth;
+      if (over > slack) {
+        const name = (el.id ? '#' + el.id : el.tagName.toLowerCase() + (el.className ? '.' + String(el.className).split(' ')[0] : ''));
+        out.push(`${name}[${txt.slice(0, 18)}] is ${over}px too wide for its button (needs ${el.scrollWidth}, has ${el.clientWidth})`);
+      }
+    }
+    return { size: innerWidth + 'x' + innerHeight, screen: Game.state, checked: document.querySelectorAll(this.PILL_SEL).length, hits: [...new Set(out)] };
+  },
+
+  overlap(slack = 2) {
+    const boxes = this.overlapBoxes(), hits = [];
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        const A = boxes[i], B = boxes[j];
+        if (A.el.contains(B.el) || B.el.contains(A.el)) continue;
+        const x = Math.min(A.b.right, B.b.right) - Math.max(A.b.left, B.b.left);
+        const y = Math.min(A.b.bottom, B.b.bottom) - Math.max(A.b.top, B.b.top);
+        if (x > slack && y > slack) hits.push(`${A.name} on ${B.name} (${Math.round(x)}x${Math.round(y)}px)`);
+      }
+    }
+    for (const { b, name } of boxes) {
+      if (b.left < -slack || b.top < -slack || b.right > innerWidth + slack || b.bottom > innerHeight + slack) {
+        hits.push(`${name} off the screen (${Math.round(b.left)},${Math.round(b.top)} to ${Math.round(b.right)},${Math.round(b.bottom)} in ${innerWidth}x${innerHeight})`);
+      }
+    }
+    return { size: innerWidth + 'x' + innerHeight, screen: Game.state, showing: boxes.length, hits };
+  },
+};

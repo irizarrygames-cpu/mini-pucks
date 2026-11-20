@@ -1,0 +1,1523 @@
+// Screens: home, HUD, intro, how-to-play, pause, results. Panels live in panels.js.
+const $ = (id) => document.getElementById(id);
+// a flat flame for a win streak: orange, a yellow heart, the game's ink outline
+const FIRE_SVG = '<svg class="fire-ico" viewBox="0 0 20 24" aria-hidden="true"><path d="M10 1.5c1.2 4.2 6.8 6.3 6.8 12.4 0 4.6-3.2 8.1-6.8 8.1s-6.8-3.5-6.8-8.1c0-3.1 1.6-5.2 3.1-6.6.2 2 1 3.4 2.2 4 0-3.8.6-7.4 1.5-9.8z" fill="#ff7a1a" stroke="#161a33" stroke-width="2" stroke-linejoin="round"/><path d="M10 12.5c.9 2 3.1 3 3.1 5.6 0 1.9-1.4 3.4-3.1 3.4s-3.1-1.5-3.1-3.4c0-2.2 1.7-3.4 3.1-5.6z" fill="#ffe14d"/></svg>';
+
+const UI = {
+  init() {
+    document.title = GAME_NAME;
+    Commentary.init();
+    $('logo').innerHTML = GAME_NAME.split(' ').map((w) => `<span>${w}</span>`).join('');
+    $('splash-logo').innerHTML = $('logo').innerHTML;
+    // the splash owns the wordmark until it has gone: see .splash-on in style.css
+    document.body.classList.add('splash-on');
+    $('splash').addEventListener('pointerdown', () => this.leaveSplash());
+    // Nothing that needs other people is allowed to start while there is no connection (no wifi, or a
+    // game that opened without one). Caught here, before the button's own handler, so every one of
+    // them behaves the same way and says why.
+    document.addEventListener('click', (e) => {
+      const hit = e.target && e.target.closest && e.target.closest('[data-needs-net]');
+      if (!hit) return;
+      // A guest with a connection is not short of internet, they are short of an account: take them
+      // to the sign-in page, where everything they have won so far comes along if they make one.
+      if (!Save.account && !Net.noWifi()) { e.preventDefault(); e.stopPropagation(); this.showAuth(this.GUEST_MSG, true); return; }
+      const d = hit.dataset;
+      const why = Net.offlineWhy(!!(d.mode || d.room || d.cup));
+      if (!why) return;
+      e.preventDefault(); e.stopPropagation();
+      this.toast(why);
+    }, true);
+    const offBtn = $('auth-offline');
+    if (offBtn) offBtn.addEventListener('click', () => { this.tap(); this.playOffline(true); });
+    $('auth-lang').addEventListener('click', () => { this.tap(); this.askLanguage('signup'); });
+    const guestBtn = $('auth-guest');
+    if (guestBtn) guestBtn.addEventListener('click', () => { this.tap(); this.playOffline(true); });
+    window.addEventListener('keydown', () => this.leaveSplash(), { once: true });
+    $('btn-play').addEventListener('click', () => { this.tap(); this.openModal('play'); });
+    document.querySelectorAll('[data-open]').forEach((b) => b.addEventListener('click', () => { this.tap(); this.openModal(b.dataset.open); }));
+    $('home-char').addEventListener('click', () => { this.tap(); this.openModal('stats'); });
+    $('coins-plus').addEventListener('click', () => { this.tap(); this.openModal('coins'); });
+    $('btn-howto').addEventListener('click', () => { this.tap(); this.showHowTo(); });
+    $('btn-profile').addEventListener('click', () => { this.tap(); this.openModal('profile'); });
+    $('btn-install').addEventListener('click', () => { this.tap(); Install.go(); });
+    $('install-ok').addEventListener('click', () => { this.tap(); $('install-steps').hidden = true; });
+    Install.init();
+    $('daily-claim').addEventListener('click', () => this.claimDaily());
+    window.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      if (!$('modal').hidden) { this.closeModal(); return; }
+      if (!$('howto').hidden) this.closeHowTo();
+    });
+    $('btn-pause').addEventListener('click', () => { this.tap(); this.togglePause(); });
+    $('watch-leave').addEventListener('click', () => { this.tap(); Online.stopWatching(); });
+    $('p-resume').addEventListener('click', () => { this.tap(); this.togglePause(); });
+    $('p-restart').addEventListener('click', () => { this.tap(); Game.startMatch(Game.lastOpts); });
+    $('p-quit').addEventListener('click', () => { this.tap(); if (Game.match && Game.match.net) Online.quit(); else Game.goHome(); });
+    $('p-howto').addEventListener('click', () => { this.tap(); this.showHowTo(); });
+    $('tut-skip').addEventListener('click', () => { this.tap(); this.closeHowTo(); });
+    $('tut-next').addEventListener('click', () => { this.tap(); Tutorial.next(); });
+    $('replay-skip').addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      const m = Game.match;
+      if (!m || m.net) return;
+      if (m.replay) m.replay.skip = true;
+      else if (m.phase === 'cele' && m.cele && m.phaseT > 0.4) m.cele.skip = true;
+    });
+    $('r-again').addEventListener('click', () => { this.tap(); if (this._againMode === 'online') Online.again(); else this.resultsAgain(); });
+    $('r-home').addEventListener('click', () => { this.tap(); Game.goHome(); });
+    $('modal-close').addEventListener('click', () => { this.tap(); this.closeModal(); });
+    $('intro-go').addEventListener('click', () => { this.tap(); Game.kickOff(); });
+    $('intro').addEventListener('pointerdown', (e) => { if (e.target === $('intro') && !(Game.match && Game.match.net)) Game.kickOff(); });
+    this.initAuth();
+    this.initOnline();
+    this.initBack();
+    $('howto-ok').addEventListener('click', () => { this.tap(); this.closeHowTo(); });
+    $('rotate-dismiss').addEventListener('click', () => { this.rotateDismissed = true; this.checkRotate(); });
+    ['p-sound', 'p-music', 'p-vibe'].forEach((id) => $(id).addEventListener('click', () => this.quickToggle(id)));
+    window.addEventListener('resize', () => { this.checkRotate(); this.measureHome(); this.measureHud(); this.applyHands(); });
+    window.addEventListener('keydown', (e) => {
+      if (e.target && e.target.tagName === 'INPUT') return;
+      if (Game.state === 'intro' && (e.key === 'Enter' || e.key === ' ') && !(Game.match && Game.match.net)) { e.preventDefault(); Game.kickOff(); }
+      if (Game.state === 'results' && !$('results').hidden && !e.repeat) {
+        if (e.key === 'Enter') { e.preventDefault(); this.tap(); if (this._againMode === 'online') Online.again(); else this.resultsAgain(); }
+        else if (e.key === 'Escape') { this.tap(); Game.goHome(); }
+      }
+    });
+    document.addEventListener('pointerdown', () => { Sound.unlock(); Sound.startMusic(); });
+    this.refreshHome();
+    this.checkRotate();
+    this.applyControls();
+  },
+
+  tap() { Sound.unlock(); Sound.tap(); },
+
+  GUEST_MSG: tl('Make an account to play online. Everything you have won as a guest comes with you.'),
+  AUTH_WAKING: tl('Waking the server up… this can take up to a minute. You can play as a guest while you wait.'),
+  AUTH_UNREACHABLE: tl("Can't reach the server. Check your connection, or play offline as a guest."),
+
+  // ---- the splash ----
+  // Everything is loaded and listening: the splash can say TAP TO START and mean it. A tap made while
+  // it was still loading (index.html remembers it), or a reload for a new build after the player had
+  // already started, goes straight on in.
+  splashReady() {
+    window.__ready = true;
+    if (window.__splashDone) window.__splashDone();
+    $('splash').classList.remove('loading');
+    $('splash-tap').textContent = tl('TAP TO START');
+    $('splash-sub').textContent = '';
+    let carryOn = false;
+    try { carryOn = sessionStorage.getItem('ms-carry-on') === '1'; sessionStorage.removeItem('ms-carry-on'); } catch (e) { /* no storage */ }
+    if (window.__earlyTap || carryOn) this.leaveSplash();
+  },
+  // The tap. The splash stays up saying what is happening until there is something to show (home
+  // or the sign-in page), which is when it goes (dropSplash). It used to go at once, and while the
+  // server woke up there was nothing at all on the screen.
+  leaveSplash() {
+    if (this._entering || !window.__ready) return;
+    this._entering = true;
+    Sound.unlock(); Sound.tap(); Sound.startMusic();
+    $('splash').classList.add('loading');
+    $('splash-tap').textContent = tl('STARTING…');
+    $('splash-sub').textContent = '';
+    Game.enter();
+  },
+  // Which language: the first thing when signing up (from: 'signup'), and Settings → LANGUAGE
+  // ('settings'). Plain rows, each language in its own words with its name in the language in use
+  // under it, and the one in use ticked. The one already showing carries on as it is; another reloads
+  // the game into it (I18N.choose), and the game comes back by itself to where it was: the sign-up
+  // form, or the menu (a guest as a guest). Until then the game is in the phone's own language.
+  askLanguage(from) {
+    if ($('lang-pick')) return;
+    const el = document.createElement('div');
+    el.id = 'lang-pick'; el.className = 'overlay lang-pick';
+    el.innerHTML = `<div class="panel lang-panel"><h2>${tl('CHOOSE YOUR LANGUAGE')}</h2>
+      <p class="lang-sub">${tl('You can change it any time in Settings.')}</p>
+      <div class="lang-list">${LANGS.map((l) => {
+        const said = tl(l.en);
+        return `<button type="button" class="lang-opt${l.id === I18N.lang ? ' sel' : ''}" data-lang="${l.id}"><b lang="${l.id}">${l.name}</b>${said !== l.name ? `<small>${said}</small>` : ''}</button>`;
+      }).join('')}</div>
+      <button type="button" class="lang-back" data-back>${tl('BACK')}</button></div>`;
+    document.body.appendChild(el);
+    const done = () => { el.remove(); if (from === 'settings') this.openModal('settings'); };
+    el.querySelector('[data-back]').addEventListener('click', () => { this.tap(); done(); });
+    el.querySelectorAll('[data-lang]').forEach((b) => b.addEventListener('click', () => {
+      this.tap();
+      const id = b.dataset.lang;
+      // where to come back to after the reload (Game.enterSteps): the sign-up form, or a guest's menu
+      if (id !== I18N.lang) {
+        try {
+          if (from === 'signup') sessionStorage.setItem('ms-signup', '1');
+          if (from === 'settings' && !Net.token) sessionStorage.setItem('ms-lang-guest', '1');
+        } catch (e) { /* no storage */ }
+      }
+      if (I18N.choose(id)) { el.querySelectorAll('button').forEach((x) => { x.disabled = true; }); return; } // reloading into it
+      done();
+      if (from === 'signup') this.setAuthMode('signup');
+    }));
+  },
+  splashStatus(text) { if (!$('splash').classList.contains('gone')) $('splash-sub').textContent = text; },
+  dropSplash() {
+    const s = $('splash');
+    if (s.hidden || s.classList.contains('gone')) return;
+    s.classList.add('gone');
+    setTimeout(() => { s.hidden = true; document.body.classList.remove('splash-on'); }, 450);
+  },
+  // Nothing is going on that a reload, or a swap of the save, would spoil: on the menu, no window
+  // open, not looking for a match, nothing half typed.
+  calm() {
+    const a = document.activeElement;
+    return Game.state === 'home' && $('modal').hidden
+      && (typeof Online === 'undefined' || Online.status === 'idle' || Online.status === 'over')
+      && !(a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA'));
+  },
+  isTouch() { return window.matchMedia('(pointer: coarse)').matches; },
+
+  checkRotate() {
+    const portrait = window.innerHeight > window.innerWidth;
+    $('rotate').hidden = !(portrait && this.isTouch() && !this.rotateDismissed);
+  },
+
+  // rotating control tips while training
+  TIPS: {
+    touch: [tl('Drag the joystick to move · hold SPRINT to run faster'), tl('Hold SHOOT to charge, release to shoot'), tl('Push the joystick sideways while shooting to curl it'), tl('SKILL with no direction = HOP over a tackle'),
+      tl('SKILL toward a defender = nutmeg or flick'), tl('No ball? TACKLE near the carrier to steal it'), tl('Fill the ring around SHOOT, then fully charge = POWER SHOT'), tl('Tap PASS when a teammate has it to call for the ball'), tl('Hold PASS for a harder through ball · full charge lofts it')],
+    kb: [tl('WASD to move · hold SHIFT to sprint'), tl('Hold SPACE to charge, release to shoot'), tl('Hold A or D while shooting to curl it'), tl('Q with no direction = HOP over a tackle'),
+      tl('Q toward a defender = nutmeg or flick'), tl('No ball? F near the carrier to tackle'), tl('Fill the power meter, then fully charge = POWER SHOT'), tl('E passes to the teammate you face'), tl('Hold E for a harder through ball · full charge lofts it')],
+  },
+  tickTips(dt) {
+    const m = Game.match, show = !!(m && m.training && Game.state === 'match' && m.phase !== 'replay');
+    const el = $('tip');
+    if (el.hidden === show) el.hidden = !show;
+    if (!show) { this._tipT = 0; return; }
+    this._tipT = (this._tipT || 0) - dt;
+    if (this._tipT > 0) return;
+    this._tipT = 6;
+    const list = this.TIPS[document.body.classList.contains('kb') ? 'kb' : 'touch'];
+    this._tipI = ((this._tipI === undefined ? -1 : this._tipI) + 1) % list.length;
+    el.textContent = list[this._tipI];
+    el.classList.remove('in'); void el.offsetWidth; el.classList.add('in');
+  },
+
+  tick(dt) {
+    this.tickTips(dt);
+    Social.tick(dt);
+    if (!$('queue').hidden) {
+      const before = Math.floor(this._queueT || 0);
+      this._queueT = (this._queueT || 0) + dt;
+      const s = Math.floor(this._queueT);
+      if (s !== before) $('q-note').textContent = tl('Searching… {0}:{1}', [Math.floor(s / 60), String(s % 60).padStart(2, '0')]);
+    }
+    if (this._toastT > 0) {
+      this._toastT -= dt;
+      if (this._toastT <= 0) $('toast').classList.remove('show');
+    }
+    if (Game.state === 'intro') {
+      this._introT -= dt;
+      if (this._introT <= 0) Game.kickOff();
+    }
+  },
+
+  toast(text) {
+    const t = $('toast');
+    t.textContent = text;
+    t.hidden = false;
+    t.classList.toggle('low', !$('results').hidden);
+    // With a menu or overlay open, the top of the screen is its title and its buttons. The
+    // toast goes to the bottom there, where only the dimmed game is behind it.
+    t.classList.toggle('down', $('results').hidden && !!document.querySelector('#modal:not([hidden]), .overlay:not([hidden])'));
+    t.classList.remove('show'); void t.offsetWidth; t.classList.add('show');
+    this._toastT = 2.4;
+  },
+
+  // the PLAY block sits above the HOW TO PLAY / FRIENDS / PROFILE row: how tall that row is
+  // depends on the labels and whether GET THE APP is showing, so it is measured, never guessed
+  // A few buttons hold one word side by side, and in some languages that word is longer than the
+  // button ("PERSONNALISER"). Those letters shrink just enough to fit, rather than spill out.
+  FIT_WORDS: '.home-row .mid-btn, .cust-top .tabs button, .lg-board, #r-title, .sig-tag, .rank-badge b, .rank-tier b, #r-streak',
+  fitWords(root = document) {
+    if (!root) return;
+    const range = document.createRange();
+    for (const el of root.querySelectorAll(this.FIT_WORDS)) {
+      el.style.fontSize = '';
+      if (!el.clientWidth) continue;
+      // the words themselves, measured: centred words spill out of both sides, and scrollWidth only
+      // counts the right-hand half of that
+      range.selectNodeContents(el);
+      // (both measured on the screen, to the fraction of a pixel: clientWidth is rounded down, so a
+      // word that just fits would otherwise look a fraction too wide and shrink for nothing)
+      const box = el.getBoundingClientRect().width, scale = box / el.offsetWidth || 1;
+      const cs = getComputedStyle(el);
+      const edge = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) + (parseFloat(cs.borderLeftWidth) || 0) + (parseFloat(cs.borderRightWidth) || 0);
+      const room = box - edge * scale, need = range.getBoundingClientRect().width;
+      if (room > 0 && need > room + 0.05) el.style.fontSize = Math.max(8, Math.floor(parseFloat(cs.fontSize) * (room / need) * 0.97 * 10) / 10) + 'px';
+    }
+  },
+
+  measureHome() {
+    this.fitWords();
+    const root = document.documentElement.style;
+    const bl = document.querySelector('.home-bl');
+    if (bl && bl.offsetHeight) root.setProperty('--bl-h', bl.offsetHeight + 'px');
+    // How far down the top of the screen reaches depends on the name, the country, how many
+    // pills there are and whether they had to wrap — so it is measured, never guessed. The logo
+    // hangs off that, and the record off the logo.
+    const home = $('home'), bar = document.querySelector('.home-bar'), pills = document.querySelector('.home-top');
+    if (!home || !bar || !bar.offsetHeight) return;
+    const top = home.getBoundingClientRect().top;
+    const head = Math.round(Math.max(bar.getBoundingClientRect().bottom, pills.getBoundingClientRect().bottom) - top);
+    root.setProperty('--head-b', head + 'px');
+    const logo = $('logo');
+    // where the logo really ends on screen (it is tilted, and its gap above differs by layout)
+    if (logo && logo.offsetHeight) root.setProperty('--logo-b', Math.round(logo.getBoundingClientRect().bottom - top) + 'px');
+    this.tuckLogo();
+  },
+
+  // On a short screen the bars above PLAY (club, season pass, party, cup) can reach up into the
+  // logo. Rather than show half a logo behind them, it steps out of the way until there is room.
+  tuckLogo() {
+    const home = $('home'), logo = $('logo'), acts = document.querySelector('.home-actions');
+    if (!home || !logo || !acts || home.hidden) return;
+    const L = logo.getBoundingClientRect(), A = acts.getBoundingClientRect();
+    if (!L.height || !A.height) return;
+    const over = A.top < L.bottom - 2 && A.left < L.right && A.right > L.left;
+    if (home.classList.contains('logo-tucked') !== over) home.classList.toggle('logo-tucked', over);
+  },
+
+  // the caption sits under the scoreboard, which is taller on a big screen than a small one
+  measureHud() {
+    const sb = $('scoreboard');
+    if (!sb || !sb.offsetHeight) return;
+    const root = document.documentElement.style;
+    // the commentary hangs just under the scoreboard
+    root.setProperty('--sb-b', Math.round(sb.getBoundingClientRect().bottom) + 'px');
+    // and stays narrow enough to miss the minimap beside it, rather than dropping below it
+    let mini = 0;
+    if (Save.data.settings.minimap && Render.W && Render.H) {
+      const box = Render.minimapBox(Render.W, Render.H);
+      if (box) mini = Math.round(box.mw + 26);
+    }
+    root.setProperty('--mini-w', mini + 'px');
+    this.placeCommentary();
+  },
+
+  // The commentary goes along the bottom, in the gap between the stick and the buttons, where it
+  // covers the least of the game (under the scoreboard it sat over the top of the pitch, and on a
+  // phone or an iPad that was in the way). Where the gap is too narrow (an upright phone) or
+  // something sits across the middle of it (the key legend on a computer, the WATCHING bar) it goes
+  // back up under the scoreboard. Worked out again each time a line is shown, so it follows the
+  // controls: left-handed, hidden for a replay, a new screen size.
+  COM_AROUND: ['#joy-base', '#hud .action', '#btn-ult', '#kb-legend', '#watch-bar', '#chat-feed', '#chat-menu', '#btn-chat', '#tip'],
+  COM_TALL: 52,   // the most a caption stands, two lines of a big one and its LIVE COMMENTARY tab
+  COM_ROOM: 180,  // the narrowest it may be down there
+  placeCommentary() {
+    const el = $('commentary');
+    if (!el) return;
+    el.style.width = '';
+    el.classList.add('low');
+    const W = window.innerWidth, mid = W / 2;
+    const bottom = window.innerHeight - (parseFloat(getComputedStyle(el).bottom) || 14), top = bottom - this.COM_TALL;
+    let left = 0, right = W, across = false;
+    const meet = (l, t, r, b) => {
+      if (r - l < 2 || b - t < 2 || t >= bottom || b <= top) return;
+      if (l < mid && r > mid) across = true;
+      else if (r <= mid) left = Math.max(left, r);
+      else right = Math.min(right, l);
+    };
+    for (const q of this.COM_AROUND) for (const e of document.querySelectorAll(q)) {
+      if (e.hidden || e.closest('[hidden]') || getComputedStyle(e).visibility === 'hidden') continue;
+      const b = e.getBoundingClientRect();
+      meet(b.left, b.top, b.right, b.bottom);
+    }
+    // a goal replay writes REPLAY and TAP TO SKIP along the bottom
+    const hud = $('hud');
+    if (hud && hud.classList.contains('replaying') && Render.replayBoxes) for (const b of Render.replayBoxes) meet(...b);
+    const w = Math.min(560, 2 * (Math.min(mid - left, right - mid) - 10));
+    if (across || w < this.COM_ROOM) { el.classList.remove('low'); return; }
+    el.style.width = Math.floor(w) + 'px';
+  },
+
+  refreshHome() {
+    this.measureHome();
+    const d = Save.data;
+    // the number climbs to where it is going, and the coin gives a kick when it changes
+    const was = this._coinsShown;
+    this._coinsShown = d.coins;
+    if (was === undefined || was === d.coins) $('coins').textContent = fmtCoins(d.coins);
+    else {
+      Pop.count($('coins'), was, d.coins, 700);
+      const c = document.querySelector('.coins .coin');
+      if (c) { c.classList.remove('kick'); void c.offsetWidth; c.classList.add('kick'); }
+    }
+    $('trophies').textContent = d.trophies || 0;
+    $('coins-plus').hidden = !Store.canShow();
+    const ch = Save.character();
+    $('home-char-name').textContent = ch.name;
+    const lv = Levels.info(d.xp || 0);
+    $('home-level').textContent = lv.level;
+    $('home-xp').style.width = Math.round((lv.into / lv.need) * 100) + '%';
+    $('home-record').innerHTML = tl('{0}W · {1}D · {2}L', [d.wins, d.draws || 0, d.losses || 0]) + (d.career.streak >= 2 ? ' · ' + FIRE_SVG + tl('{0} WIN STREAK', [d.career.streak]) : '');
+    // a win streak of two or more: a flame on your card; the weekend: a sticker on PLAY
+    const fire = $('home-fire'), streak = d.career.streak || 0;
+    fire.hidden = streak < 2;
+    if (streak >= 2) fire.innerHTML = FIRE_SVG + `<b>${streak}</b>`;
+    const pb = $('play-bonus');
+    pb.hidden = !Bonus.weekend();
+    if (!pb.hidden) pb.textContent = tl('DOUBLE COINS WEEKEND');
+    this.portrait($('home-char-canvas'), Save.look());
+    const ovr = $('home-ovr');
+    ovr.querySelector('b').textContent = charOvr(ch);
+    ovr.style.setProperty('--rar', RARITIES[ch.rarity].color);
+    const ready = Achievements.readyList().length;
+    $('prof-badge').hidden = ready === 0;
+    $('prof-badge').textContent = ready;
+    const club = Clubs.mine(), clubMode = Clubs.clubMode();
+    // menus and portraits wear your club's kit (and the other side is from the same world: a club
+    // plays clubs, a country plays countries)
+    const sameSide = (c) => c && c.id !== club.id && !!c.euro === !!club.euro;
+    if (!Clubs.home || Clubs.home.id !== club.id) Clubs.setMatch(club, sameSide(Clubs.current) ? Clubs.current : Clubs.random(club));
+    if (Game.demo && Game.demo.club && !sameSide(Game.demo.club)) Game.demo = null; // the match behind the menu starts again with the right teams
+    $('home-user').textContent = Save.account || tl('GUEST');
+    $('home-club-name').textContent = club.name;
+    // a club's badge is round or shield-shaped: square canvas for it, the flag's 3:2 for a country
+    // (a 3:2 canvas shown square stretched the badge)
+    const hb = $('home-club-badge'), hw = 72, hh = club.crest ? 72 : 48;
+    if (hb.width !== hw || hb.height !== hh) { hb.width = hw; hb.height = hh; }
+    this.flagBadge(hb, club);
+    // your country's place in the league, or (for a club) how long your contract has to run
+    const pillEl = $('home-club');
+    pillEl.dataset.open = clubMode ? 'offers' : 'league';
+    pillEl.title = clubMode ? tl('Club offers') : tl('League table');
+    if (clubMode) pillEl.removeAttribute('data-needs-net'); else pillEl.setAttribute('data-needs-net', '');
+    pillEl.classList.toggle('club', clubMode);
+    $('home-club-pos').textContent = clubMode ? (Career.active() ? Career.timeShort(Save.data.cc.until - Date.now()) : '!') : this._leaguePos ? '#' + this._leaguePos : '';
+    this.refreshClubBar();
+    this.refreshPassBar();
+    this.tuckLogo();
+    // ranked: your tier this season sits next to your country
+    const myRank = Net.user && Net.user.rank, pill = $('home-rank');
+    pill.hidden = !myRank;
+    if (myRank) {
+      const tier = RANK_TIERS.find((x) => x.id === myRank.tier) || RANK_TIERS[0];
+      pill.style.setProperty('--t', tier.color);
+      pill.innerHTML = `<i></i><span>${tier.name}</span><em>${myRank.rp}</em>`;
+    }
+    this.portrait($('home-char-canvas'), Save.look());
+    const badge = $('mission-badge'), toClaim = typeof Missions !== 'undefined' ? Missions.ready() : 0;
+    if (badge) { badge.hidden = !toClaim; badge.textContent = toClaim || ''; }
+    // today's three emotes, until you have looked at them (build 120)
+    const cBadge = $('crate-badge'), fresh = typeof Emotes !== 'undefined' && Emotes.unseen() ? Emotes.shop().picks.filter((id) => !Emotes.owns(id)).length : 0;
+    if (cBadge) { cBadge.hidden = !fresh; cBadge.textContent = fresh || ''; }
+    // once, after the update: what Club Career is (and the coins for the old characters)
+    if (Save.data.seenCC === 0 && !this._ccNewSoon) { this._ccNewSoon = true; setTimeout(() => { this._ccNewSoon = false; this.maybeWhatsNew(); }, 1400); }
+  },
+
+  // A club's badge: js/crests.js draws it (a shape, its colours split, the city, an emblem).
+  crestBadge(cv, club) { Crests.badge(cv, club); },
+
+  // a simple flag for a country (no crests or emblems, just its colours and shapes), or a club's badge
+  flagBadge(cv, club) {
+    if (club && club.crest) { this.crestBadge(cv, club); return; }
+    const g = cv.getContext('2d'), W = cv.width, H = cv.height;
+    g.clearRect(0, 0, W, H);
+    const pad = Math.max(2, W * 0.05), x0 = pad, y0 = pad, w = W - pad * 2, h = H - pad * 2, r = Math.min(w, h) * 0.14;
+    const cx = x0 + w / 2, cy = y0 + h / 2;
+    const outline = () => { g.beginPath(); g.moveTo(x0 + r, y0); g.arcTo(x0 + w, y0, x0 + w, y0 + h, r); g.arcTo(x0 + w, y0 + h, x0, y0 + h, r); g.arcTo(x0, y0 + h, x0, y0, r); g.arcTo(x0, y0, x0 + w, y0, r); g.closePath(); };
+    const rect = (c, x, y, ww, hh) => { g.fillStyle = c; g.fillRect(x, y, ww, hh); };
+    const bands = (cols, ratios = cols.map(() => 1)) => { const t = ratios.reduce((a, b) => a + b, 0); let y = y0; cols.forEach((c, i) => { const hh = (h * ratios[i]) / t; rect(c, x0, y, w, hh + 0.6); y += hh; }); };
+    const vbands = (cols) => cols.forEach((c, i) => rect(c, x0 + (w * i) / cols.length, y0, w / cols.length + 0.6, h));
+    const dot = (c, x, y, rr) => { g.fillStyle = c; g.beginPath(); g.arc(x, y, rr, 0, Math.PI * 2); g.fill(); };
+    const star = (c, x, y, R, hollow) => {
+      g.beginPath();
+      for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + (i * Math.PI) / 5, rr = i % 2 ? R * 0.42 : R; g.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
+      g.closePath();
+      if (hollow) { g.strokeStyle = c; g.lineWidth = Math.max(1, R * 0.22); g.stroke(); } else { g.fillStyle = c; g.fill(); }
+    };
+    g.save(); outline(); g.clip();
+    switch (club.id) {
+      case 'argentina': bands(['#75aadb', '#ffffff', '#75aadb']); dot('#f6b40e', cx, cy, h * 0.1); break;
+      case 'spain': bands(['#c60b1e', '#ffc400', '#c60b1e'], [1, 2, 1]); break;
+      case 'france': vbands(['#0055a4', '#ffffff', '#ef4135']); break;
+      case 'england': rect('#ffffff', x0, y0, w, h); rect('#cf142b', cx - w * 0.08, y0, w * 0.16, h); rect('#cf142b', x0, cy - h * 0.12, w, h * 0.24); break;
+      case 'brazil':
+        rect('#009c3b', x0, y0, w, h);
+        g.fillStyle = '#ffdf00'; g.beginPath(); g.moveTo(cx, y0 + h * 0.12); g.lineTo(x0 + w * 0.9, cy); g.lineTo(cx, y0 + h * 0.88); g.lineTo(x0 + w * 0.1, cy); g.closePath(); g.fill();
+        dot('#002776', cx, cy, h * 0.2); break;
+      case 'portugal': rect('#046a38', x0, y0, w * 0.4, h); rect('#da291c', x0 + w * 0.4, y0, w * 0.6, h); dot('#ffe000', x0 + w * 0.4, cy, h * 0.19); break;
+      case 'netherlands': bands(['#ae1c28', '#ffffff', '#21468b']); break;
+      case 'belgium': vbands(['#1b1b1b', '#fdda24', '#ef3340']); break;
+      case 'italy': vbands(['#009246', '#ffffff', '#ce2b37']); break;
+      case 'germany': bands(['#1b1b1b', '#dd0000', '#ffce00']); break;
+      case 'croatia': {
+        bands(['#ff0000', '#ffffff', '#171796']);
+        const s = h * 0.12;
+        for (let rr = 0; rr < 3; rr++) for (let cc = 0; cc < 3; cc++) rect((rr + cc) % 2 ? '#ffffff' : '#ff0000', cx - s * 1.5 + cc * s, cy - s * 1.5 + rr * s, s + 0.4, s + 0.4);
+        break;
+      }
+      case 'morocco': rect('#c1272d', x0, y0, w, h); star('#006233', cx, cy, h * 0.26, true); break;
+      case 'colombia': bands(['#fcd116', '#003893', '#ce1126'], [2, 1, 1]); break;
+      case 'uruguay':
+        bands(Array.from({ length: 9 }, (_, i) => (i % 2 ? '#0038a8' : '#ffffff')));
+        rect('#ffffff', x0, y0, w * 0.38, (h * 5) / 9); dot('#fcd116', x0 + w * 0.19, y0 + (h * 5) / 18, h * 0.15); break;
+      case 'usa':
+        bands(Array.from({ length: 7 }, (_, i) => (i % 2 ? '#ffffff' : '#b22234')));
+        rect('#3c3b6e', x0, y0, w * 0.44, (h * 4) / 7);
+        for (let rr = 0; rr < 3; rr++) for (let cc = 0; cc < 4; cc++) dot('#ffffff', x0 + w * 0.06 + cc * w * 0.105, y0 + h * 0.1 + rr * h * 0.16, Math.max(0.8, h * 0.035));
+        break;
+      case 'mexico': vbands(['#006847', '#ffffff', '#ce1126']); dot('#8b5a2b', cx, cy, h * 0.12); break;
+      case 'japan': rect('#ffffff', x0, y0, w, h); dot('#bc002d', cx, cy, h * 0.28); break;
+      case 'switzerland': { rect('#d52b1e', x0, y0, w, h); const s = h * 0.62; rect('#ffffff', cx - s * 0.16, cy - s / 2, s * 0.32, s); rect('#ffffff', cx - s / 2, cy - s * 0.16, s, s * 0.32); break; }
+      case 'senegal': vbands(['#00853f', '#fdef42', '#e31b23']); star('#00853f', cx, cy, h * 0.17); break;
+      case 'denmark': rect('#c8102e', x0, y0, w, h); rect('#ffffff', x0 + w * 0.3, y0, w * 0.12, h); rect('#ffffff', x0, cy - h * 0.09, w, h * 0.18); break;
+      default:
+        if (club.flag) this.flagShapes(g, club.flag, x0, y0, w, h, { rect, bands, dot, star });
+        else rect(club.home.jersey, x0, y0, w, h);
+    }
+    g.restore();
+    outline(); g.lineWidth = Math.max(1.5, W * 0.045); g.lineJoin = 'round'; g.strokeStyle = OUTLINE; g.stroke();
+  },
+
+  // the newer countries' flags are data (club.flag): simple shapes in 0..1 flag space, sizes in flag heights
+  flagShapes(g, ops, x0, y0, w, h, { rect, bands, dot, star }) {
+    const X = (u) => x0 + u * w, Y = (v) => y0 + v * h;
+    const poly = (c, pts) => { g.fillStyle = c; g.beginPath(); pts.forEach(([u, v], i) => (i ? g.lineTo(X(u), Y(v)) : g.moveTo(X(u), Y(v)))); g.closePath(); g.fill(); };
+    for (const [op, c, ...a] of ops) {
+      switch (op) {
+        case 'fill': rect(c, x0, y0, w, h); break;
+        case 'h': bands(c, a[0]); break;
+        case 'v': { const r = a[0] || c.map(() => 1), t = r.reduce((p, q) => p + q, 0); let x = x0; c.forEach((col, i) => { const ww = (w * r[i]) / t; rect(col, x, y0, ww + 0.6, h); x += ww; }); break; }
+        case 'rect': rect(c, X(a[0]), Y(a[1]), a[2] * w + 0.4, a[3] * h + 0.4); break;
+        case 'dot': dot(c, X(a[0]), Y(a[1]), a[2] * h); break;
+        case 'star': star(c, X(a[0]), Y(a[1]), a[2] * h, a[3]); break;
+        case 'poly': poly(c, a[0]); break;
+        case 'tri': poly(c, [[0, 0], [a[0], 0.5], [0, 1]]); break;
+        case 'cross': rect(c, X(0.5) - (a[0] * h) / 2, y0, a[0] * h, h); rect(c, x0, Y(0.5) - (a[0] * h) / 2, w, a[0] * h); break;
+        case 'nordic': rect(c, X(0.36) - (a[0] * h) / 2, y0, a[0] * h, h); rect(c, x0, Y(0.5) - (a[0] * h) / 2, w, a[0] * h); break;
+        case 'plus': { const s = a[2] * h, t = s * 0.3; rect(c, X(a[0]) - t / 2, Y(a[1]) - s / 2, t, s); rect(c, X(a[0]) - s / 2, Y(a[1]) - t / 2, s, t); break; }
+        case 'saltire':
+          g.strokeStyle = c; g.lineWidth = a[0] * h; g.lineCap = 'butt';
+          g.beginPath(); g.moveTo(x0, y0); g.lineTo(x0 + w, y0 + h); g.moveTo(x0 + w, y0); g.lineTo(x0, y0 + h); g.stroke(); break;
+        case 'halfdot': {
+          const [c2, u, v, r] = a;
+          g.fillStyle = c; g.beginPath(); g.arc(X(u), Y(v), r * h, Math.PI, 0); g.fill();
+          g.fillStyle = c2; g.beginPath(); g.arc(X(u), Y(v), r * h, 0, Math.PI); g.fill();
+          break;
+        }
+        case 'crescent': {
+          // a disc with a smaller one cut out of it, opening to the right
+          const [u, v, r] = a, R = r * h;
+          g.save(); g.beginPath(); g.rect(x0, y0, w, h); g.arc(X(u) + R * 0.28, Y(v), R * 0.8, 0, Math.PI * 2); g.clip('evenodd');
+          dot(c, X(u), Y(v), R); g.restore(); break;
+        }
+        case 'arcstars': {
+          const [u, v, R, n, r] = a;
+          for (let i = 0; i < n; i++) { const t = Math.PI * (1.15 + (0.7 * i) / (n - 1)); star(c, X(u) + Math.cos(t) * R * h * 1.4, Y(v) + Math.sin(t) * R * h, r * h); }
+          break;
+        }
+      }
+    }
+  },
+
+  // ---- signing in ----
+  initAuth() {
+    this._authMode = 'login';
+    document.querySelectorAll('[data-auth]').forEach((b) => b.addEventListener('click', () => { this.tap(); this.setAuthMode(b.dataset.auth); }));
+    $('auth-form').addEventListener('submit', (e) => { e.preventDefault(); this.submitAuth(); });
+    // signing up: the box that says you agree to the Privacy Policy (build 117). Its link opens the
+    // policy; inside the app that is a web page outside the game, so it is behind the grown-up check
+    // (shown over the sign-in page, which sits at 40).
+    $('auth-agree-box').addEventListener('change', () => { if ($('auth-agree-box').checked && $('auth-msg').classList.contains('bad')) { $('auth-msg').textContent = ''; $('auth-msg').classList.remove('bad'); } });
+    $('auth-agree-text').addEventListener('click', async (e) => {
+      const a = e.target.closest && e.target.closest('a');
+      if (!a) return;
+      e.preventDefault(); // (a tap on the link opens it; it does not tick the box)
+      this.tap();
+      if (NATIVE && !(await this.grownUpCheck(tl('This opens a web page outside the game.'), 46))) return;
+      window.open(a.href, '_blank', 'noopener');
+    });
+    $('auth-forgot').addEventListener('click', (e) => { e.preventDefault(); this.tap(); this.showForgot(); });
+    $('auth-clubs').innerHTML = CLUBS.slice().sort((x, y) => x.name.localeCompare(y.name)).map((c) => `<button type="button" class="auth-club" data-club="${c.id}"><canvas width="96" height="64"></canvas><b${c.name.length > 9 ? ' class="long"' : ''}>${c.name}</b></button>`).join('');
+    $('auth-clubs').querySelectorAll('.auth-club').forEach((b) => {
+      this.flagBadge(b.querySelector('canvas'), Clubs.get(b.dataset.club));
+      b.addEventListener('click', () => {
+        this.tap();
+        this._authClub = b.dataset.club;
+        $('auth-clubs').querySelectorAll('.auth-club').forEach((x) => x.classList.toggle('sel', x === b));
+        $('auth-msg').textContent = '';
+      });
+    });
+  },
+
+  setAuthMode(mode) {
+    // signing up starts with the language: picking another reloads the game, so before anything is typed
+    if (mode === 'signup' && !I18N.pickedNow) { this.askLanguage('signup'); return; }
+    this._authMode = mode;
+    document.querySelectorAll('[data-auth]').forEach((b) => b.classList.toggle('sel', b.dataset.auth === mode));
+    $('auth-clubs-wrap').hidden = mode !== 'signup';
+    $('auth').classList.toggle('signup', mode === 'signup');
+    $('auth-go').textContent = mode === 'signup' ? tl('CREATE ACCOUNT') : tl('LOG IN');
+    $('auth-forgot').hidden = mode !== 'login';
+    $('auth-lang').hidden = mode !== 'signup';
+    $('auth-agree').hidden = mode !== 'signup';
+    $('auth-agree-text').innerHTML = tl('I agree to the {0}', [`<a href="${API_BASE}/privacy.html" target="_blank" rel="noopener">${esc(tl('Privacy Policy'))}</a>`]);
+    $('auth-lang').textContent = tl('LANGUAGE: {0}', [I18N.name()]);
+    $('auth-pass').autocomplete = mode === 'signup' ? 'new-password' : 'current-password';
+    $('auth-msg').textContent = mode === 'signup' ? tl('Password: 8+ characters.') : '';
+    $('auth-msg').classList.remove('bad');
+  },
+
+  // calm: a message that is not the player's fault (the server waking up), so it is not red
+  // No connection, but this device has been signed in before: open the game as that player,
+  // from the copy of their progress kept here. Returns false if there is nothing to go on, in
+  // which case the sign-in screen is the only honest thing to show.
+  // asGuest: no account at all, playing on the save kept on this device (PLAY AS A GUEST, PLAY OFFLINE)
+  playOffline(asGuest) {
+    const name = asGuest ? null : Net.lastUser;
+    if (!name && !asGuest) return false;
+    this.dropSplash();
+    if (name) {
+      Save.account = name;
+      Save.load();                    // this account's own copy on this device
+      Net.user = { name, club: Save.data.club, online: null, rank: null, wc: { round: 0, titles: 0 } };
+    } else {
+      Save.useGuest();
+      Net.user = null;
+    }
+    Net.goOffline();
+    $('auth').hidden = true;
+    Game.state = 'home';
+    Render.buildLayer();   // Clubs.mine() reads the country straight out of the save
+    this.show('home');
+    // with a connection this is the server still waking up, and it comes online by itself
+    this.toast(!name ? (Net.noWifi() ? tl('PLAYING OFFLINE — PROGRESS STAYS ON THIS DEVICE') : tl('PLAYING AS A GUEST. SIGN IN ANY TIME TO PLAY ONLINE'))
+      : Net.noWifi() ? tl('NO WI-FI — PLAYING ON THIS DEVICE') : tl('THE SERVER IS WAKING UP — ONLINE IN A MOMENT'));
+    return true;
+  },
+
+  showAuth(msg, calm) {
+    this.dropSplash();
+    Game.state = 'home';
+    this.closeAll();
+    $('home').hidden = true;
+    $('auth').hidden = false;
+    // back from picking a language while signing up (askLanguage): straight on with signing up
+    let signup = false;
+    try { signup = sessionStorage.getItem('ms-signup') === '1'; if (signup) sessionStorage.removeItem('ms-signup'); } catch (e) { /* no storage */ }
+    if (signup) { I18N.pickedNow = true; this.setAuthMode('signup'); }
+    if (msg) { $('auth-msg').textContent = msg; $('auth-msg').classList.toggle('bad', !calm); }
+    else { $('auth-msg').textContent = ''; $('auth-msg').classList.remove('bad'); }
+    $('auth-logo').innerHTML = $('logo').innerHTML;
+    this.authButtons();
+  },
+  // PLAY OFFLINE up top when the server cannot be reached at all; otherwise the quieter guest way in
+  // under LOG IN (with a connection, signing in is better: a guest's progress stays on this device)
+  authButtons() {
+    const off = $('auth-offline'), guest = $('auth-guest');
+    if (off) off.hidden = !Net.offlineOffer;
+    if (guest) guest.hidden = !!Net.offlineOffer;
+  },
+  // a note on the sign-in page from starting up (connecting, waking the server), which never writes
+  // over anything the player's own LOG IN put there. onlyOver: change it only if it still says this.
+  authNote(text, bad, onlyOver) {
+    const m = $('auth-msg');
+    if ($('auth').hidden || $('auth-go').disabled) return;
+    if (onlyOver !== undefined && m.textContent !== onlyOver) return;
+    m.textContent = text; m.classList.toggle('bad', !!bad);
+  },
+
+  async submitAuth() {
+    const user = $('auth-user').value.trim(), pass = $('auth-pass').value;
+    const msg = $('auth-msg');
+    msg.classList.add('bad');
+    if (!user || !pass) { msg.textContent = tl('Enter a username and password.'); return; }
+    if (this._authMode === 'signup' && !this._authClub) { msg.textContent = tl('Pick your country first.'); return; }
+    if (this._authMode === 'signup' && !$('auth-agree-box').checked) { msg.textContent = tl('Tick the box to agree to the Privacy Policy.'); return; }
+    const go = $('auth-go');
+    go.disabled = true; msg.classList.remove('bad'); msg.textContent = this._authMode === 'signup' ? tl('Creating your account…') : tl('Logging in…');
+    let r;
+    // a sleeping server holds the answer back for up to a minute: say so, rather than sit on "Logging in…"
+    const slow = setTimeout(() => { if (go.disabled) msg.textContent = Net.WAKING_MSG; }, 3000);
+    try { r = this._authMode === 'signup' ? await Net.signup(user, pass, this._authClub) : await Net.login(user, pass); }
+    catch (e) { r = null; }
+    clearTimeout(slow);
+    // no wifi at all: nothing to wake, so say so
+    if (!r && Net.noWifi()) {
+      go.disabled = false; msg.classList.add('bad'); msg.textContent = Net.NO_WIFI_MSG;
+      return;
+    }
+    // no answer at all: the host was asleep. Wake it and have one more go before saying anything.
+    if (!r) {
+      msg.classList.remove('bad');
+      msg.textContent = tl('Waking the server up…');
+      const up = await Net.wake((n, of) => { msg.textContent = tl('Waking the server up… ({0}/{1})', [n, of]); });
+      if (up) {
+        try { r = this._authMode === 'signup' ? await Net.signup(user, pass, this._authClub) : await Net.login(user, pass); }
+        catch (e2) { r = { ok: false, msg: tl("Can't reach the server. Try again in a minute.") }; }
+      } else {
+        r = { ok: false, msg: tl("Can't reach the server. Try again in a minute.") };
+      }
+    }
+    go.disabled = false;
+    if (!r.ok) { msg.classList.add('bad'); msg.textContent = r.msg ? I18N.server(r.msg) : tl('Something went wrong'); Sound.steal(); return; }
+    $('auth-pass').value = '';
+    this.tap();
+    this.signedIn(this._authMode === 'signup');
+  },
+
+  signedIn(fresh) {
+    this.dropSplash();
+    // A phone keeps its keyboard up, and the page scrolled up to make room for it, after the sign-in
+    // form has gone, which left bits of the sign-in screen over the game. Put both back.
+    const a = document.activeElement;
+    if (a && a.blur && a.closest && a.closest('#auth')) a.blur();
+    window.scrollTo(0, 0);
+    // whichever way we got here — resumed, logged in, signed up — we are online again, so the
+    // offline marks come off and anything won while offline goes up
+    Net.goOnline();
+    $('auth').hidden = true;
+    // just signed up, or just used a recovery code: the new code, to write down, this once
+    if (Net.freshCode) { const code = Net.freshCode; Net.freshCode = null; this.showCode(code, fresh ? 'new' : 'reset'); }
+    // back online in the middle of something (a match, its results): leave the screen as it is
+    if (Game.state !== 'home') { Net.openSocket(); return; }
+    Game.state = 'home';
+    Render.buildLayer();
+    this.show('home');
+    if (fresh) this.toast(tl('YOU PLAY FOR {0}!', [Clubs.mine().name]));
+    Net.openSocket(); // puts you straight back into an online match you were still in
+    this.fetchLeaguePos();
+  },
+
+  async fetchLeaguePos() {
+    const r = await Net.league();
+    if (!r || !r.ok) return;
+    const i = r.table.findIndex((row) => row.club === Save.data.club);
+    this._leaguePos = i >= 0 ? i + 1 : 0;
+    this._league = r;
+    if (Game.state === 'home') this.refreshHome();
+  },
+
+  // ---- online overlays ----
+  initOnline() {
+    $('q-cancel').addEventListener('click', () => { this.tap(); Online.cancelQueue(); });
+    $('lb-leave').addEventListener('click', () => { this.tap(); Online.leaveRoom(); });
+    $('lb-switch').addEventListener('click', () => {
+      this.tap();
+      const r = Online.room; if (!r) return;
+      const me = r.players.find((p) => p.name === r.you);
+      Net.sendSoon({ t: 'room.team', team: me && me.team === 'blue' ? 'red' : 'blue' });
+    });
+    $('lb-start').addEventListener('click', () => { this.tap(); Net.sendSoon({ t: 'room.start' }); });
+    $('lb-coop').addEventListener('click', () => { this.tap(); Net.sendSoon({ t: 'room.coop', on: !(Online.room && Online.room.coop) }); });
+    $('lb-pro').addEventListener('click', () => { this.tap(); Net.sendSoon({ t: 'room.pro', on: !(Online.room && Online.room.pro) }); });
+  },
+
+  showQueue(msg) {
+    this.closeAll();
+    $('queue').hidden = false;
+    $('q-format').textContent = msg.format === 'ranked' ? tl('RANKED · 1v1') : msg.wc !== null && msg.wc !== undefined ? `${msg.cup === 'cc' ? tl('CHAMPIONS CUP') : msg.format === 'pens' ? tl('PENALTY WORLD CUP') : tl('WORLD CUP')} · ${WC_ROUNDS[msg.wc]}${msg.format === 'pens' ? '' : ` · ${msg.format}`}` : tl('ONLINE · {0}', [msg.format === 'fk' ? tl('FREE KICKS') : msg.format === 'pens' ? tl('PENALTIES') : String(msg.format).startsWith('pro/') ? `${tl('PRO MATCH')} ${String(msg.format).slice(4)}` : msg.format]);
+    $('q-dots').innerHTML = '<i></i><i></i><i></i>';
+    this._queueT = 0;
+    $('q-note').textContent = tl('Searching… 0:00');
+    this.queueParty(null);
+  },
+  hideQueue() { $('queue').hidden = true; },
+  queueParty(names) {
+    const el = $('q-party');
+    el.hidden = !names || names.length < 2;
+    if (!el.hidden) el.textContent = tl('PARTY: {0}', [names.join(' · ')]);
+  },
+
+  showLobby(msg) {
+    this.closeAll();
+    $('lobby').hidden = false;
+    $('lb-code').textContent = msg.code;
+    const size = { 'pens': 1, 'fk': 1, '1v1': 1, '2v2': 2, '3v3': 3, '4v4': 4 }[msg.format];
+    $('lb-formats').innerHTML = `<span>${tl('FORMAT')}</span>` + ['pens', 'fk', '1v1', '2v2', '3v3', '4v4'].map((f) => `<button data-f="${f}" class="${f === msg.format ? 'sel' : ''}" ${msg.isHost ? '' : 'disabled'}>${f}</button>`).join('');
+    $('lb-formats').querySelectorAll('[data-f]').forEach((b) => b.addEventListener('click', () => { this.tap(); Net.sendSoon({ t: 'room.format', format: b.dataset.f }); }));
+    const side = (team, el) => {
+      const list = msg.players.filter((p) => p.team === team);
+      const rows = [];
+      for (let i = 0; i < size; i++) {
+        const p = list[i];
+        rows.push(p ? `<div class="lb-p ${p.name === msg.you ? 'me' : ''}"><canvas width="48" height="32" data-club="${p.club}"></canvas><b>${p.name}</b>${p.name === msg.host ? `<em>${tl('HOST')}</em>` : ''}</div>` : `<div class="lb-p empty"><b>${msg.coop ? tl('FILLED IN') : tl('OPEN')}</b></div>`);
+      }
+      const label = msg.coop ? (team === 'blue' ? tl('YOUR TEAM') : tl('THE COMPUTER')) : team === 'blue' ? tl('SIDE A') : tl('SIDE B');
+      el.innerHTML = `<small>${label}</small>` + rows.join('');
+      el.querySelectorAll('canvas[data-club]').forEach((cv) => this.flagBadge(cv, Clubs.get(cv.dataset.club)));
+    };
+    side('blue', $('lb-blue')); side('red', $('lb-red'));
+    $('lb-start').hidden = !msg.isHost;
+    $('lb-note').textContent = msg.isHost ? tl('Send the code to your friends, then press START.') : tl('Waiting for {0} to start…', [msg.host]);
+    const coop = !!msg.coop;
+    $('lb-coop').hidden = !msg.isHost;
+    $('lb-coop').textContent = coop ? tl('SAME TEAM · ON') : tl('SAME TEAM · OFF');
+    $('lb-coop').classList.toggle('on', coop);
+    $('lb-switch').hidden = coop;
+    $('lb-coop-note').hidden = !coop;
+    // PRO MATCH (2v2 and up): the host switches it on; everyone sees that it is
+    const pro = !!msg.pro, proOk = size >= 2 && msg.format !== 'pens' && msg.format !== 'fk';
+    $('lb-pro').hidden = !msg.isHost || !proOk;
+    $('lb-pro').textContent = pro ? tl('PRO MATCH · ON') : tl('PRO MATCH · OFF');
+    $('lb-pro').classList.toggle('on', pro);
+    $('lb-pro-note').hidden = !pro || msg.isHost; // (the host has the button that says so)
+    $('lb-pro-note').textContent = `${tl('PRO MATCH')}: ${tl('A bigger pitch with the real rules: the ball can go out for throw-ins, corners and goal kicks.')}`;
+  },
+  hideLobby() { $('lobby').hidden = true; },
+
+  show(screen) {
+    $('home').hidden = screen !== 'home';
+    $('hud').hidden = screen !== 'match';
+    $('pause').hidden = true;
+    $('results').hidden = true;
+    $('intro').hidden = true;
+    this.applyControls();
+    if (screen === 'match') this.measureHud();
+    if (screen === 'home') { this.refreshHome(); Render._homeSpot = null; setTimeout(() => this.maybeDaily(), 350); }
+  },
+
+  // ---- daily reward ----
+  maybeDaily() {
+    if (Game.state !== 'home' || !$('splash').hidden || !$('modal').hidden || !$('howto').hidden || !$('daily').hidden) return;
+    const p = Daily.pending();
+    if (!p) { this.maybePassNew(); return; }
+    $('daily-days').innerHTML = DAILY.map((c, i) => {
+      const n = i + 1, cls = n < p.day ? 'done' : n === p.day ? 'today' : '';
+      return `<div class="dday ${cls}${n === 7 ? ' jackpot' : ''}"><small>${tl('DAY {0}', [n])}</small><span class="coin"></span><b>${c}</b></div>`;
+    }).join('');
+    $('daily-claim').innerHTML = `${tl('CLAIM')} <span class="coin"></span> ${p.coins}`;
+    $('daily').hidden = false;
+    Sound.powerReady();
+  },
+
+  claimDaily() {
+    const p = Daily.claim();
+    $('daily').hidden = true;
+    if (!p) return;
+    Sound.goalJingle(true);
+    vibrate(30);
+    this.toast(tl('DAY {0} REWARD  +{1} COINS', [p.day, p.coins]));
+    this.refreshHome();
+    setTimeout(() => this.maybePassNew(), 900);
+  },
+
+  closeAll() {
+    for (const id of ['modal', 'pause', 'results', 'intro', 'howto', 'daily', 'queue', 'lobby']) $(id).hidden = true;
+  },
+
+  // ---- the phone's Back button (inside the Android app) ----
+  // Without this, Back threw the whole game into the background, even in the middle of a match.
+  // Now it does what the screen's own close, back or pause button would: whatever is on top goes,
+  // a match pauses, and on the home screen it asks before leaving the game. The app's App plugin
+  // sends the press; the bridge Capacitor puts in the page is enough to hear it, no bundler needed.
+  initBack() {
+    const cap = window.Capacitor;
+    if (!NATIVE || !cap || typeof cap.addListener !== 'function') return false;
+    if (Array.isArray(cap.PluginHeaders) && !cap.PluginHeaders.some((h) => h && h.name === 'App')) return false;
+    try { cap.addListener('App', 'backButton', () => this.back()); return true; } catch (e) { return false; }
+  },
+  // one press of Back; returns what it did (the tests read it)
+  back() {
+    // a card over everything (a grown-up check, a recovery code, "leave the game?"): its own way out
+    const cards = document.querySelectorAll('.overlay.grownup');
+    if (cards.length) {
+      const top = cards[cards.length - 1], no = top.querySelector('[data-no]');
+      if (no) no.click(); else top.remove();
+      return 'card';
+    }
+    if (!$('splash').hidden && !$('splash').classList.contains('gone')) { this.leaveApp(); return 'leave'; }
+    if (!$('install-steps').hidden) { $('install-steps').hidden = true; return 'install'; }
+    if (!$('modal').hidden) {
+      const p = this._player;
+      if ($('modal').dataset.kind === 'player' && p && p.back) { this.tap(); this.openModal(p.back); return 'player-back'; }
+      this.tap(); this.closeModal();
+      return 'modal';
+    }
+    if (!$('howto').hidden) { this.tap(); this.closeHowTo(); return 'howto'; }
+    if (!$('daily').hidden) { $('daily-claim').click(); return 'daily'; }
+    if (!$('queue').hidden) { $('q-cancel').click(); return 'queue'; }
+    if (!$('lobby').hidden) { $('lb-leave').click(); return 'lobby'; }
+    if (Game.state === 'paused') { this.tap(); this.togglePause(); return 'resume'; }
+    if (Game.state === 'match') { this.tap(); this.togglePause(); return 'pause'; }
+    if (!$('results').hidden) { $('r-home').click(); return 'results'; }
+    // the card before a match: off a match against the computer, nothing while an online one counts down
+    if (Game.state === 'intro') { if (!(Game.match && Game.match.net)) { this.tap(); Game.goHome(); return 'intro'; } return 'wait'; }
+    if (!$('auth').hidden && this._authMode === 'signup') { this.tap(); this.setAuthMode('login'); return 'login'; }
+    this.askLeave();
+    return 'ask';
+  },
+  askLeave() {
+    if (document.querySelector('.overlay.leave')) return;
+    const el = document.createElement('div');
+    el.className = 'overlay grownup leave';
+    el.style.zIndex = 46; // over everything a press of Back can be made on, the sign-in page (40) too
+    el.innerHTML = `<div class="panel small"><div class="gate"><strong>${tl('LEAVE THE GAME?')}</strong>
+      <div class="gate-btns"><button class="mid-btn" data-no>${tl('STAY')}</button><button class="mid-btn red" data-yes>${tl('LEAVE')}</button></div></div></div>`;
+    document.body.appendChild(el);
+    el.querySelector('[data-no]').addEventListener('click', () => { this.tap(); el.remove(); });
+    el.querySelector('[data-yes]').addEventListener('click', () => { el.remove(); this.leaveApp(); });
+  },
+  // into the background, the way Android's own Back leaves an app (it is all still there when you come back)
+  leaveApp() {
+    Net.flushSave();
+    const cap = window.Capacitor;
+    if (!cap || typeof cap.nativePromise !== 'function') return;
+    cap.nativePromise('App', 'minimizeApp', {}).catch(() => cap.nativePromise('App', 'exitApp', {}).catch(() => {}));
+  },
+
+  // ---- match intro card ----
+  showIntro(m, startsIn) {
+    const cup = m.mode === 'cup' ? Cup.state() : null;
+    $('intro-stage').textContent = m.pens ? (m.pens.fk ? tl('FREE KICKS · 5 EACH, OVER OR ROUND THE WALL') : tl('PENALTY SHOOTOUT · 5 KICKS EACH')) : m.net ? (m.ranked ? tl('RANKED · 1v1') : m.fcup ? tl('FRIEND CUP · {0}', [CUP_ROUND_NAMES[m.fcup.of - 1 - m.fcup.round] || tl('CUP')]) : m.wc !== null && m.wc !== undefined ? (m.cupKind === 'cc' ? tl('CHAMPIONS CUP · {0} · {1}', [WC_ROUNDS[m.wc], m.format]) : tl('WORLD CUP · {0} · {1}', [WC_ROUNDS[m.wc], m.format])) : tl('ONLINE · {0}', [m.rules ? `${tl('PRO MATCH')} ${m.format}` : m.format])) : m.training ? tl('TRAINING · NO CLOCK') : (cup ? (Cup.champions() ? tl('CHAMPIONS CUP · {0}', [Cup.ROUNDS[cup.round]]) : tl('CUP · {0}', [Cup.ROUNDS[cup.round]])) : m.rules ? tl('PRO MATCH') : tl('QUICK MATCH')) + ` · ${m.format}`;
+    $('intro-go').hidden = !!m.net;
+    // what this match pays on top: the weekend, or the win streak a win here would make
+    const ib = $('intro-bonus'), streak = Save.data.career.streak || 0, next = Bonus.of(streak + 1);
+    ib.hidden = !!m.training || !next.why;
+    ib.classList.toggle('fire', next.why === 'streak');
+    if (next.why === 'weekend') ib.textContent = tl('DOUBLE COINS WEEKEND · EVERY MATCH PAYS ×2');
+    else if (next.why === 'streak') ib.innerHTML = FIRE_SVG + (streak >= 2 ? tl('ON FIRE ×{0} · A WIN PAYS +{1}% COINS', [streak, Math.round(next.pct * 100)]) : tl('{0} WIN IN A ROW · ANOTHER PAYS +{1}% COINS', [streak, Math.round(next.pct * 100)]));
+    $('intro-opp').textContent = TEAMS.red.name;
+    $('intro-home').textContent = TEAMS.blue.name;
+    const ch = Save.character();
+    $('intro-you').innerHTML = `${ch.name.toUpperCase()} <b style="color:${RARITIES[ch.rarity].color}">${charOvr(ch)}</b>`;
+    $('intro-stars').textContent = '★'.repeat(m.club.level + 1) + '☆'.repeat(3 - m.club.level);
+    this.portrait($('intro-canvas'), m.human && m.human.look ? m.human.look : Save.look());
+    $('intro').querySelector('.intro-ch').hidden = !(m.challenges && m.challenges.length);
+    $('intro').style.setProperty('--opp', kitUi(TEAMS.red));
+    $('intro-challenges').innerHTML = this.challengeList(m);
+    if (m.net) {
+      // who's playing: real names on each side
+      const names = (team) => m.players.filter((p) => p.team === team && !p.isKeeper).map((p) => (p === m.human ? tl('YOU') : p.name)).join(' · ');
+      const chal = m.netChal ? m.netChal.map((c) => `<li><i></i><span>${I18N.upper(tl(c.text))}</span><em>+1</em></li>`).join('') : '';
+      $('intro-challenges').innerHTML = `<li class="done"><span>${names('blue')}</span></li><li><span>${names('red')}</span></li>` + chal;
+      $('intro').querySelector('.intro-ch').hidden = false;
+      $('intro').querySelector('.intro-ch small').textContent = m.netChal ? tl('PLAYERS · CHALLENGES: A RANK POINT EACH IF YOU WIN') : tl('PLAYERS');
+    } else $('intro').querySelector('.intro-ch small').textContent = tl('CHALLENGES');
+    $('intro').hidden = false;
+    this._introT = m.net ? 999 : 6;
+  },
+
+  challengeList(m) {
+    return (m.challenges || []).map((c) => `<li class="${c.complete ? 'done' : ''}"><i></i><span>${c.text}</span><b><span class="coin"></span>${c.coins}</b></li>`).join('');
+  },
+
+  // ---- how to play ----
+  showHowTo(after) {
+    this._howtoAfter = after || null;
+    $('modal').hidden = true;
+    $('howto').hidden = false;
+    Tutorial.start();
+  },
+
+  closeHowTo() {
+    Tutorial.stop();
+    $('howto').hidden = true;
+    Save.data.tutorialSeen = true;
+    Save.write();
+    const cb = this._howtoAfter;
+    this._howtoAfter = null;
+    if (cb) cb();
+  },
+
+  // ---- HUD ----
+  updateHUD(m) {
+    $('sb-blue').textContent = m.score.blue;
+    $('sb-red').textContent = m.score.red;
+    let label;
+    if (m.training) label = tl('PRACTICE');
+    else if (m.overtime) label = tl('GOLDEN');
+    else { const s = Math.ceil(m.time); label = `${String((s / 60) | 0).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; }
+    if (this._lastTime !== label) {
+      $('sb-time').textContent = label;
+      $('sb-time').classList.toggle('hurry', !m.overtime && m.time <= 10 && m.time > 0);
+      $('sb-time').classList.toggle('ot', m.overtime || m.training);
+      this._lastTime = label;
+    }
+    const p = Math.round((m.meter.blue / CFG.POWER_MAX) * 100);
+    if (this._lastMeter !== p) {
+      $('btn-shoot').style.setProperty('--p', p);
+      $('btn-shoot').classList.toggle('power', p >= 100);
+      this._lastMeter = p;
+    }
+    if (m.net) {
+      const ping = Math.round(Net.rtt);
+      if (this._ping !== ping) { $('net-ping').hidden = false; $('net-ping').textContent = ping ? ping + ' ms' : '…'; $('net-ping').classList.toggle('bad', ping > 160); this._ping = ping; }
+    } else if (this._ping !== null) { $('net-ping').hidden = true; this._ping = null; }
+    const rep = m.phase === 'replay' || m.phase === 'cele';
+    if (this._rep !== rep) { $('hud').classList.toggle('replaying', rep); $('hud').classList.toggle('noskip', !!m.net); this._rep = rep; }
+    // the long ult cutscene plays with the world nearly still: the controls get out of its way
+    const cut = !!(m.ultCut && !m.ultCut.short);
+    if (this._cut !== cut) { $('hud').classList.toggle('cutscene', cut); this._cut = cut; }
+    const h = m.human, has = m.ball.owner === h || passComing(m, h); // a pass on its way to you: SKILL, not TACKLE
+    $('btn-pass').classList.toggle('call', !has && !!m.ball.owner && m.ball.owner.team === 'blue');
+
+    const ult = $('btn-ult');
+    if (ult) {
+      const u = clamp((h.ult || 0) / CFG.ULT_MAX, 0, 1), ready = u >= 1 && !h.ultOn;
+      if (this._ultU !== u) { ult.querySelector('.ult-fill').style.width = Math.round(u * 100) + '%'; this._ultU = u; }
+      ult.classList.toggle('ready', ready);
+      ult.classList.toggle('on', !!h.ultOn);
+      const label = h.ultOn ? tl('ULT ON') : ready ? tl('ULT READY') : tl('ULT');
+      if (this._ultLabel !== label) { ult.querySelector('b').textContent = label; this._ultLabel = label; }
+    }
+
+    // SKILL (with ball) / TACKLE (without) + their cooldowns
+    const skillCd = Math.round(clamp(h.skillCd / skillCooldown(h), 0, 1) * 100);
+    const slideCd = Math.round(clamp(h.slideCd / (tackleCooldown(h) + SLIDE.time), 0, 1) * 100);
+    const cd = has ? skillCd : slideCd;
+    const btn = $('btn-skill');
+    if (this._mode !== has) { btn.classList.toggle('slide', !has); this._mode = has; }
+    if (this._cd !== cd) { btn.style.setProperty('--cd', cd); btn.classList.toggle('ready', cd === 0); this._cd = cd; }
+    const st = Math.round(h.stamina * 100);
+    if (this._st !== st || this._tired !== h.exhausted) {
+      $('btn-sprint').style.setProperty('--st', st);
+      $('btn-sprint').classList.toggle('tired', h.exhausted);
+      this._st = st; this._tired = h.exhausted;
+    }
+    if (document.body.classList.contains('kb')) {
+      $('kl-stam').style.width = st + '%';
+      $('kl-stam').style.background = h.exhausted ? '#ff8a8e' : '';
+      $('kl-power').style.width = p + '%';
+      $('kl-skill').style.width = 100 - skillCd + '%';
+      $('kl-slide').style.width = 100 - slideCd + '%';
+      const kl = this._kl || (this._kl = { q: document.querySelector('.kl[data-k="q"]'), f: document.querySelector('.kl[data-k="f"]'), sp: document.querySelector('.kl[data-k=" "]') });
+      kl.q.classList.toggle('cool', skillCd > 0);
+      kl.f.classList.toggle('cool', slideCd > 0);
+      kl.sp.classList.toggle('hot', p >= 100);
+    }
+  },
+
+  keyLegendPress(k, down) {
+    let key = k;
+    if (KEYS.up.includes(k) || KEYS.down.includes(k) || KEYS.left.includes(k) || KEYS.right.includes(k)) key = 'move';
+    else if (KEYS.sprint.includes(k)) key = 'shift';
+    else if (KEYS.pass.includes(k)) key = 'e';
+    else if (KEYS.shoot.includes(k)) key = ' ';
+    else if (KEYS.skill.includes(k)) key = 'q';
+    else if (KEYS.slide.includes(k)) key = 'f';
+    const el = document.querySelector(`.kl[data-k="${key}"]`);
+    if (el) el.classList.toggle('down', down);
+  },
+
+  // auto: phones get touch buttons, computers get the key legend
+  applyControls() {
+    const mode = Save.data.settings.controls || 'auto';
+    const kb = mode === 'keyboard' || (mode === 'auto' && !this.isTouch());
+    document.body.classList.toggle('kb', kb);
+    this.applyHands();
+  },
+
+  // LEFT-HANDED (Settings → HANDED): the stick on the right, the buttons on the left. Where each
+  // button sits changes from one screen size to the next (style.css has a rule for each), so rather
+  // than a second copy of every rule, each one is read where the stylesheet put it and mirrored.
+  // Runs whenever a screen is shown and when the window changes size.
+  HAND_IDS: ['joy-base', 'btn-pass', 'btn-shoot', 'btn-skill', 'btn-sprint', 'btn-ult'],
+  applyHands() {
+    const lefty = !!(Save.data && Save.data.settings && Save.data.settings.lefty);
+    document.body.classList.toggle('lefty', lefty);
+    const hud = $('hud'), els = this.HAND_IDS.map((id) => $(id)).filter(Boolean);
+    for (const el of els) { el.style.left = ''; el.style.right = ''; }
+    if (!lefty || !hud || hud.hidden) return;
+    const W = hud.clientWidth;
+    // read every one first, then move them, so one move cannot change what the next one reads
+    const spots = els.filter((el) => el.offsetParent === hud).map((el) => ({ el, from: W - el.offsetLeft - el.offsetWidth }));
+    for (const s of spots) { s.el.style.left = s.from + 'px'; s.el.style.right = 'auto'; }
+  },
+
+  togglePause() {
+    if (Game.state === 'match') {
+      Game.state = 'paused';
+      Commentary.pause();
+      Input.reset();
+      Sound.chargeStop();
+      if (Game.match && Game.match.human) Game.match.human.charging = false;
+      this.syncToggles();
+      $('p-challenges').innerHTML = this.challengeList(Game.match);
+      $('p-restart').hidden = !!Game.match.net;
+      const fan = !!(typeof Online !== 'undefined' && Online.watching);
+      $('pause').querySelector('h2').textContent = fan ? tl('WATCHING') : Game.match.net ? tl('MENU') : tl('PAUSED');
+      $('p-quit').textContent = fan ? tl('STOP WATCHING') : Game.match.net ? tl('LEAVE MATCH (LOSS)') : tl('QUIT');
+      document.querySelector('.p-ch').hidden = !(Game.match.challenges && Game.match.challenges.length);
+      $('pause').hidden = false;
+    } else if (Game.state === 'paused') {
+      Game.state = 'match';
+      Commentary.resume();
+      $('pause').hidden = true;
+      Game.last = performance.now();
+    }
+  },
+
+  syncToggles() {
+    const s = Save.data.settings;
+    $('p-sound').classList.toggle('off', s.sfx === 0);
+    $('p-music').classList.toggle('off', s.music === 0);
+    $('p-vibe').classList.toggle('off', !s.vibration);
+  },
+
+  quickToggle(id) {
+    const s = Save.data.settings;
+    if (id === 'p-sound') s.sfx = s.sfx === 0 ? 0.85 : 0;
+    if (id === 'p-music') s.music = s.music === 0 ? 0.5 : 0;
+    if (id === 'p-vibe') s.vibration = !s.vibration;
+    Save.write(); Sound.applyVolumes(); this.syncToggles(); this.tap();
+  },
+
+  // The noise full time makes. How much of it depends on what happened: a win throws confetti
+  // from the top of the card, a trophy throws a lot more, and a defeat gets none of it.
+  resultsFanfare(outcome, { coins = 0, levelUp = false, champion = false, rankUp = false } = {}) {
+    const card = document.querySelector('#results .panel') || $('results');
+    if (!card) return;
+    card.classList.remove('landed'); void card.offsetWidth; card.classList.add('landed');
+    const b = card.getBoundingClientRect();
+    const top = { x: b.left + b.width / 2, y: b.top + 40 };
+    const won = outcome === 'win';
+    if (!won && !champion) return;                 // a defeat lands quietly
+    const gold = ['#ffe14d', '#ffc21a', '#ffffff', '#35c06a'];
+    setTimeout(() => {
+      Pop.confetti(top.x, top.y, gold, champion ? 70 : 40, 1.2);
+      Pop.ring(top.x, top.y, '#ffe14d', champion ? 320 : 220, 520);
+      if (champion) Pop.flash('#ffe14d', 0.3, 280);
+    }, 220);
+    // the coins arrive after the card has settled, so you can watch them land on the counter
+    if (coins > 0) setTimeout(() => Pop.coins(card, coins >= 300 ? 16 : 10), 700);
+    if (levelUp) setTimeout(() => {
+      const el = $('r-xp');
+      const at = Pop.at(el);
+      Pop.shout(at.x, at.y - 30, tl('LEVEL UP!'), '#6fd3ff', 1100);
+      Pop.ring(at.x, at.y, '#6fd3ff', 200, 460);
+      Pop.confetti(at.x, at.y, ['#6fd3ff', '#ffffff'], 24);
+    }, 1100);
+    if (rankUp) setTimeout(() => {
+      const el = $('r-rank') || card;
+      const at = Pop.at(el);
+      Pop.shout(at.x, at.y - 30, tl('RANK UP!'), '#ff8a1f', 1100);
+      Pop.confetti(at.x, at.y, ['#ff8a1f', '#ffe14d', '#ffffff'], 30);
+    }, levelUp ? 1900 : 1100);
+    if (champion) setTimeout(() => Pop.confetti(top.x, top.y, gold, 50, 1.4), 900);
+  },
+
+  // ---- results ----
+  showResults(m) {
+    const r = m.result, d = Save.data;
+    Game.state = 'results';
+    const readyBefore = new Set(Achievements.readyList().map((a) => a.id));
+    const levelBefore = Levels.info(d.xp || 0).level;
+    const pens = !!m.pens;
+    const xp = pens ? Pens.xp(m) : Levels.matchXp(m);
+    d.xp = (d.xp || 0) + xp;
+    if (!m.training) this.passAfterMatch(xp);
+    d.coins += r.coins;
+    d.matches++;
+    d.goals = (d.goals || 0) + m.human.stats.goals;
+    if (r.outcome === 'win') d.wins++; else if (r.outcome === 'draw') d.draws = (d.draws || 0) + 1; else d.losses = (d.losses || 0) + 1;
+    const hs = m.human.stats, c = d.career;
+    c.assists += hs.assists; c.tackles += hs.tackles; c.skills += hs.skills; c.dodges += hs.dodges || 0;
+    c.passes += hs.passes; c.shots += hs.shots; c.powerGoals += m.flags.powerGoals || 0;
+    if (hs.goals >= 3) c.hattricks++;
+    if (m.score.red === 0 && !pens) c.cleanSheets++;
+    c.formats[m.format] = (c.formats[m.format] || 0) + 1;
+    c.streak = r.outcome === 'win' ? c.streak + 1 : 0;
+    c.bestStreak = Math.max(c.bestStreak, c.streak);
+    // a win streak or the weekend puts more on the match's coins, whichever is bigger (Bonus)
+    const bonus = Bonus.of(r.outcome === 'win' ? c.streak : 0);
+    const streakBonus = Bonus.coins(r.coins, r.outcome === 'win' ? c.streak : 0);
+    d.coins += streakBonus;
+    const cupResult = m.mode === 'cup' ? Cup.record(m) : null;
+    Missions.record(Missions.fromMatch(m, r.outcome, { cupChampion: cupResult === 'champion' }));
+    const cupPrize = cupResult === 'champion' ? Cup.prize() : 0;
+    if (cupPrize) d.coins += cupPrize;
+    // playing for a club: your wages for this match (a shootout pays for the penalties you scored)
+    const pay = Career.pay(m, pens ? m.score.blue : m.human.stats.goals, pens ? 0 : m.human.stats.assists, pens);
+    const payCoins = pay ? pay.coins : 0;
+    Save.write();
+    const levelAfter = Levels.info(d.xp).level;
+    let levelCoins = 0;
+    for (let lv = levelBefore + 1; lv <= levelAfter; lv++) levelCoins += Levels.reward(lv);
+    d.coins += levelCoins;
+    if (levelCoins) Save.write();
+    const fresh = Achievements.readyList().filter((a) => !readyBefore.has(a.id));
+    if (fresh.length) setTimeout(() => { if (Game.state === 'results') { this.toast(fresh.length === 1 ? tl('ACHIEVEMENT: {0}  ·  CLAIM IN PROFILE', [I18N.upper(fresh[0].name)]) : tl('{0} ACHIEVEMENTS UNLOCKED  ·  CLAIM IN PROFILE', [fresh.length])); Sound.powerReady(); } }, 900);
+
+    const title = { win: tl('VICTORY!'), loss: tl('DEFEAT'), draw: tl('DRAW') }[r.outcome];
+    $('r-title').textContent = cupResult === 'champion' ? tl('CHAMPIONS!') : title;
+    $('r-title').className = 'r-title ' + (cupResult === 'champion' ? 'win champ' : r.outcome);
+    $('r-blue').textContent = m.score.blue;
+    $('r-red').textContent = m.score.red;
+    const pt = m.poss.blue + m.poss.red, pb = pt ? Math.round((m.poss.blue / pt) * 100) : 50;
+    const pk = pens ? m.pens.kicks : null;
+    const rows = pens ? [
+      [tl('SCORED'), m.score.blue, m.score.red],
+      [tl('MISSED'), pk.blue.length - m.score.blue - m.pens.theirSaves, pk.red.length - m.score.red - m.pens.saves],
+      [tl('SAVES'), m.pens.saves, m.pens.theirSaves],
+      [tl('KICKS'), pk.blue.length, pk.red.length],
+    ] : [
+      [tl('GOALS'), m.score.blue, m.score.red],
+      [tl('POSS %'), pb, 100 - pb],
+      [tl('SHOTS'), m.stats.blue.shots, m.stats.red.shots],
+      [tl('PASSES'), m.stats.blue.passes, m.stats.red.passes],
+      [tl('TACKLES'), m.stats.blue.tackles || 0, m.stats.red.tackles || 0],
+      [tl('SAVES'), m.stats.blue.saves, m.stats.red.saves],
+    ];
+    $('r-stats').innerHTML = rows.map(([k, a, b]) =>
+      `<div class="r-row"><b class="${a > b ? 'lead' : ''}">${a}</b><span>${k}</span><b class="${b > a ? 'lead' : ''}">${b}</b></div>`).join('');
+    const h = m.human.stats;
+    $('r-you').innerHTML = pens ? `<span><b>${h.goals}</b> ${tl('of {0} penalties scored', [h.shots])}</span><span><b>${m.pens.saves}</b> ${tl('saves')}</span>`
+      : `<span><b>${h.goals}</b> ${tl('goals')}</span><span><b>${h.shots}</b> ${tl('shots')}</span><span><b>${h.tackles}</b> ${tl('tackles')}</span><span><b>${h.skills}</b> ${tl('skills')}</span>`;
+    const mvp = r.mvp;
+    const mvpName = mvp.isHuman ? tl('YOU') : `${TEAMS[mvp.team].name} #${mvp.number}${mvp.isKeeper ? ' ' + tl('(GK)') : ''}`;
+    const s = mvp.stats;
+    const line = mvp.isKeeper ? tl('{0} saves', [s.saves]) : pens ? tl('{0} penalties · {1} saves', [s.goals, m.pens.saves]) : tl('{0} G · {1} A · {2} tackles', [s.goals, s.assists, s.tackles]);
+    $('r-mvp').innerHTML = `<canvas id="r-mvp-canvas" width="84" height="84"></canvas><div><small>${tl('MVP')}</small><strong>${mvpName}</strong><em>${line}</em></div>`;
+    this.portrait($('r-mvp-canvas'), mvp.look, mvp.team, mvp.isKeeper, mvp.number);
+    $('r-challenges').innerHTML = this.challengeList(m) + this.wagesLine(pay, pens);
+    $('r-coins').textContent = `+${r.coins + streakBonus + levelCoins + cupPrize + payCoins}`;
+    const multTag = $('r-mult');
+    multTag.classList.remove('hard');
+    multTag.hidden = r.mult === 1;
+    multTag.textContent = `${Save.data.settings.difficulty.toUpperCase()} ×${r.mult}`;
+    multTag.classList.toggle('hard', r.mult > 1);
+    this.bonusLine(c.streak, bonus, streakBonus, r.outcome === 'win');
+    const lv = Levels.info(d.xp);
+    $('r-level').textContent = lv.level;
+    $('r-xpbar').style.width = Math.round((lv.into / lv.need) * 100) + '%';
+    $('r-xp').textContent = lv.level > levelBefore ? tl('LEVEL UP! +{0} XP · +{1} COINS', [xp, levelCoins]) : tl('+{0} XP', [xp]);
+    $('r-xp').classList.toggle('lvup', lv.level > levelBefore);
+
+    // cup progress + what the big button does next
+    const cupBox = $('r-cup');
+    const fk = !!(m.pens && m.pens.fk);
+    this._againMode = pens ? (fk ? 'fk' : 'pens') : 'quick';
+    if (m.mode === 'cup' && Cup.last()) {
+      const c = Cup.last();
+      cupBox.hidden = false;
+      cupBox.innerHTML = Cup.ROUNDS.map((name, i) => {
+        const res = c.results[i], club = Clubs.get(c.opponents[i]);
+        const cls = res ? (res.won ? 'won' : 'lost') : i === c.round && c.active ? 'next' : '';
+        return `<div class="cup-step ${cls}"><small>${name}</small><b style="--c:${clubUi(club)}">${club.name}</b><em>${res ? `${res.blue}-${res.red}` : '—'}</em></div>`;
+      }).join('');
+      this._againMode = cupResult === 'next' ? 'cup' : 'newcup';
+      $('r-again').textContent = cupResult === 'next' ? tl('PLAY {0}', [Cup.ROUNDS[c.round]]) : cupResult === 'champion' ? tl('NEW CUP') : tl('TRY AGAIN');
+      if (cupResult === 'champion') Trophy.show({ title: Cup.champions() ? tl('CHAMPIONS!') : tl('CUP WINNERS!'), sub: Cup.champions() ? tl('CHAMPIONS CUP · +{0} COINS', [Cup.prize()]) : tl('BOT WORLD CUP · +300 COINS'), cup: Cup.champions() ? 'champions' : null, club: Clubs.mine(), mates: m.players.filter((p) => p.team === 'blue' && !p.isKeeper && p !== m.human).map((p) => p.look) });
+    } else {
+      cupBox.hidden = true;
+      this._againMode = pens ? (m.net ? (fk ? 'onlinefk' : 'onlinepens') : (fk ? 'fk' : 'pens')) : m.rules ? 'pro' : 'quick';
+      // (a shootout against a friend you challenged: the same friend again)
+      $('r-again').textContent = pens && m.net && m.onlinePenEnd && m.onlinePenEnd.rematch ? tl('REMATCH') : tl('PLAY AGAIN');
+    }
+    $('results').hidden = false;
+    this.fitWords($('results'));
+    $('hud').hidden = true;
+    Input.reset();
+    this.resultsFanfare(r.outcome, {
+      coins: r.coins + streakBonus + levelCoins + cupPrize + payCoins,
+      levelUp: lv.level > levelBefore,
+      champion: cupResult === 'champion',
+    });
+  },
+
+  // ---- online results: the server's numbers, your rewards ----
+  showOnlineResults(m, msg) {
+    const d = Save.data, side = msg.side, other = side === 'blue' ? 'red' : 'blue';
+    const mirror = side === 'red';
+    const mine = msg.score[side], theirs = msg.score[other];
+    const outcome = msg.outcome;
+    Game.state = 'results';
+    const me = msg.players[msg.you] || { stats: {} }, st = Object.assign({ goals: 0, assists: 0, tackles: 0, skills: 0, shots: 0, passes: 0, dodges: 0 }, me.stats);
+    const readyBefore = new Set(Achievements.readyList().map((a) => a.id));
+    const levelBefore = Levels.info(d.xp || 0).level;
+    const xp = 50 + st.goals * 25 + st.assists * 15 + st.tackles * 6 + st.skills * 2 + (st.dodges || 0) * 5 + (outcome === 'win' ? 70 : outcome === 'draw' ? 30 : 0);
+    const coins = 30 + mine * 10 + st.goals * 10 + (outcome === 'win' ? 70 : outcome === 'draw' ? 25 : 0);
+    d.xp = (d.xp || 0) + xp; d.coins += coins; d.matches++;
+    this.passAfterMatch(xp);
+    d.goals = (d.goals || 0) + st.goals;
+    if (outcome === 'win') d.wins++; else if (outcome === 'draw') d.draws = (d.draws || 0) + 1; else d.losses = (d.losses || 0) + 1;
+    const c = d.career;
+    c.assists += st.assists; c.tackles += st.tackles; c.skills += st.skills; c.dodges += st.dodges || 0;
+    c.passes += st.passes; c.shots += st.shots; c.powerGoals += m.flags.powerGoals || 0;
+    if (st.goals >= 3) c.hattricks++;
+    if (theirs === 0) c.cleanSheets++;
+    c.formats[msg.format] = (c.formats[msg.format] || 0) + 1;
+    if (!msg.coop) { c.online = (c.online || 0) + 1; if (outcome === 'win') c.onlineWins = (c.onlineWins || 0) + 1; }
+    c.streak = outcome === 'win' ? c.streak + 1 : 0;
+    c.bestStreak = Math.max(c.bestStreak, c.streak);
+    const bonus = Bonus.of(outcome === 'win' ? c.streak : 0);
+    const streakBonus = Bonus.coins(coins, outcome === 'win' ? c.streak : 0);
+    d.coins += streakBonus;
+    // the online World Cup (or Champions Cup): remember this run's results to show the road to the final
+    const cup = msg.wc || null, champs = !!cup && msg.cup === 'cc';
+    const cupPrizeOnline = champs ? CC_PRIZE : WC_PRIZE;
+    let run = [];
+    if (cup) {
+      const holder = champs ? Career.state() : d, key = champs ? 'run' : 'wcRun';
+      if (cup.round === 0 || !Array.isArray(holder[key])) holder[key] = [];
+      run = holder[key];
+      run[cup.round] = { club: msg.clubs[other], mine, theirs, won: cup.won };
+      run.length = cup.round + 1;
+      if (cup.champion) {
+        d.coins += cupPrizeOnline;
+        if (champs) Career.state().titles = (Career.state().titles || 0) + 1; else d.wcTitles = (d.wcTitles || 0) + 1;
+      }
+      if (Net.user) Net.user[champs ? 'cc' : 'wc'] = { round: cup.next, titles: cup.titles };
+    }
+    // playing for a club: your wages, from the goals and assists the server counted
+    const pay = isEuro(msg.clubs[side]) ? Career.pay(m, st.goals, st.assists, false) : null;
+    const payCoins = pay ? pay.coins : 0;
+    // a friend cup: this round, and the prize if you just won the lot
+    const fcup = msg.fcup || null;
+    const fcupPrize = fcup && fcup.champion ? FCUP_PRIZE : 0;
+    if (fcupPrize) d.coins += fcupPrize;
+    const wcPrize = cup && cup.champion ? cupPrizeOnline : 0;
+    const levelAfter = Levels.info(d.xp).level;
+    let levelCoins = 0;
+    for (let lv = levelBefore + 1; lv <= levelAfter; lv++) levelCoins += Levels.reward(lv);
+    d.coins += levelCoins;
+    // (before build 121 an online match never counted towards a mission at all)
+    Missions.record(Missions.fromOnline(m, msg, st));
+    Save.write();
+    const fresh = Achievements.readyList().filter((a) => !readyBefore.has(a.id));
+    if (fresh.length) setTimeout(() => { if (Game.state === 'results') { this.toast(fresh.length === 1 ? tl('ACHIEVEMENT: {0}  ·  CLAIM IN PROFILE', [I18N.upper(fresh[0].name)]) : tl('{0} ACHIEVEMENTS UNLOCKED  ·  CLAIM IN PROFILE', [fresh.length])); Sound.powerReady(); } }, msg.forfeit ? 2800 : 900); // after the forfeit note has been read
+
+    $('r-title').textContent = cup && cup.champion ? (champs ? tl('CHAMPIONS!') : tl('WORLD CHAMPIONS!')) : cup && !cup.won ? tl('KNOCKED OUT') : { win: tl('VICTORY!'), loss: tl('DEFEAT'), draw: tl('DRAW') }[outcome];
+    $('r-title').className = 'r-title ' + (cup && cup.champion ? 'win champ' : outcome);
+    $('r-blue').textContent = mine; $('r-red').textContent = theirs;
+    if (msg.forfeit && outcome === 'win') setTimeout(() => { if (Game.state === 'results') this.toast(tl('THE OTHER TEAM LEFT · YOU WIN')); }, 400);
+    const S = msg.stats, poss = mirror ? 100 - msg.poss : msg.poss;
+    const rows = [
+      [tl('GOALS'), mine, theirs], [tl('POSS %'), poss, 100 - poss],
+      [tl('SHOTS'), S[side].shots || 0, S[other].shots || 0], [tl('PASSES'), S[side].passes || 0, S[other].passes || 0],
+      [tl('TACKLES'), S[side].tackles || 0, S[other].tackles || 0], [tl('SAVES'), S[side].saves || 0, S[other].saves || 0],
+    ];
+    $('r-stats').innerHTML = rows.map(([k, a, b]) => `<div class="r-row"><b class="${a > b ? 'lead' : ''}">${a}</b><span>${k}</span><b class="${b > a ? 'lead' : ''}">${b}</b></div>`).join('');
+    $('r-you').innerHTML = `<span><b>${st.goals}</b> ${tl('goals')}</span><span><b>${st.assists}</b> ${tl('assists')}</span><span><b>${st.tackles}</b> ${tl('tackles')}</span><span><b>${st.skills}</b> ${tl('skills')}</span>`;
+    const mvp = msg.mvp, mvpPlayer = m.players[mvp.index];
+    const mvpName = mvp.index === msg.you ? tl('YOU') : mvp.keeper ? tl('{0} GK', [(mvp.team === side ? TEAMS.blue : TEAMS.red).name]) : mvp.name;
+    const ms = mvp.stats || {};
+    $('r-mvp').innerHTML = `<canvas id="r-mvp-canvas" width="84" height="84"></canvas><div><small>${tl('MVP')}</small><strong>${mvpName}</strong><em>${mvp.keeper ? tl('{0} saves', [ms.saves || 0]) : tl('{0} G · {1} A · {2} tackles', [ms.goals || 0, ms.assists || 0, ms.tackles || 0])}</em></div>`;
+    if (mvpPlayer) this.portrait($('r-mvp-canvas'), mvpPlayer.look, mvpPlayer.team, mvpPlayer.isKeeper, mvpPlayer.number);
+    const club = Clubs.mine();
+    const lg = msg.league;
+    const lgText = lg && lg.pos ? (lg.d > 0 ? tl('{0} MOVES UP TO {1} ▲', [club.name, ordinal(lg.pos)]) : lg.d < 0 ? tl('{0} DROPS TO {1} ▼', [club.name, ordinal(lg.pos)]) : tl('{0} STAYS {1}', [club.name, ordinal(lg.pos)])) : `${club.name}: ${outcome === 'win' ? tl('UP A PLACE') : outcome === 'loss' ? tl('DOWN A PLACE') : tl('NO CHANGE')}`;
+    const chalRows = (msg.challenges || []).map((c) => `<li class="${c.done ? 'done' : ''}"><i></i><span>${I18N.upper(tl(c.text))}</span>${c.done ? `<em>${outcome === 'win' ? tl('+1 RP') : tl('WIN IT NEXT TIME')}</em>` : ''}</li>`).join('');
+    // (a club has no place in the countries' league: what it gives you is your wages)
+    $('r-challenges').innerHTML = chalRows + (club.euro ? '' : msg.coop
+      ? `<li><i></i><span>${tl('PLAYED TOGETHER AGAINST THE COMPUTER — NOTHING MOVES IN THE LEAGUE')}</span></li>`
+      : `<li class="${lg && lg.d > 0 ? 'done' : ''}"><i></i><span>${tl('LEAGUE: {0}', [lgText])}</span></li>`) + this.wagesLine(pay, false);
+    $('r-coins').textContent = `+${coins + streakBonus + levelCoins + wcPrize + fcupPrize + payCoins}`;
+    $('r-mult').hidden = false; $('r-mult').textContent = msg.coop ? tl('PLAYING TOGETHER') : msg.ranked ? tl('RANKED') : fcup ? tl('FRIEND CUP · {0}', [CUP_ROUND_NAMES[fcup.of - 1 - fcup.round] || tl('CUP')]) : cup ? (champs ? tl('CHAMPIONS CUP') : tl('WORLD CUP')) : tl('ONLINE'); $('r-mult').classList.add('hard');
+    // what this match did to your rank
+    const rankBox = $('r-rank'), rk = msg.rank;
+    rankBox.hidden = !rk;
+    if (rk) {
+      const tier = RANK_TIERS.find((x) => x.id === rk.tier) || RANK_TIERS[0], rd = msg.rankD || 0;
+      const tierBefore = (Net.user && Net.user.rank && Net.user.rank.tier) || null;
+      this._rankedUp = !!(tierBefore && tierBefore !== rk.tier && rd > 0);
+      rankBox.style.setProperty('--t', tier.color);
+      rankBox.innerHTML = `<span class="r-rank-tier">${tier.name}</span><b>${tl('{0} RP', [rk.rp])}</b><em class="${rd > 0 ? 'up' : rd < 0 ? 'down' : 'flat'}">${rd > 0 ? '+' + rd : rd < 0 ? rd : tl('NO CHANGE')}</em>`;
+      if (Net.user) Net.user.rank = rk;
+    }
+    this.bonusLine(c.streak, bonus, streakBonus, outcome === 'win');
+    const lv = Levels.info(d.xp);
+    $('r-level').textContent = lv.level;
+    $('r-xpbar').style.width = Math.round((lv.into / lv.need) * 100) + '%';
+    $('r-xp').textContent = lv.level > levelBefore ? tl('LEVEL UP! +{0} XP · +{1} COINS', [xp, levelCoins]) : tl('+{0} XP', [xp]);
+    $('r-xp').classList.toggle('lvup', lv.level > levelBefore);
+    $('r-cup').hidden = !cup;
+    if (cup) {
+      $('r-cup').innerHTML = WC_ROUNDS.map((name, i) => {
+        const r = run[i];
+        const cls = r ? (r.won ? 'won' : 'lost') : i === cup.round + 1 && cup.won && !cup.champion ? 'next' : '';
+        const club = r ? Clubs.get(r.club) : null;
+        return `<div class="cup-step ${cls}"><small>${name}</small><b style="--c:${club ? clubUi(club) : '#8a90b8'}">${club ? club.short : '?'}</b><em>${r ? `${r.mine}-${r.theirs}` : '—'}</em></div>`;
+      }).join('');
+      if (cup.champion) Trophy.show({ title: champs ? tl('CHAMPIONS!') : tl('WORLD CHAMPIONS!'), sub: champs ? tl('ONLINE CHAMPIONS CUP · +{0} COINS', [CC_PRIZE]) : tl('ONLINE WORLD CUP · +{0} COINS', [WC_PRIZE]), cup: champs ? 'champions' : null, club: Clubs.get(msg.clubs[side]), mates: m.players.filter((p) => p.team === 'blue' && !p.isKeeper && p !== m.human).map((p) => p.look) });
+    }
+    if (fcup) {
+      const round = CUP_ROUND_NAMES[fcup.of - 1 - fcup.round] || tl('CUP'), next = CUP_ROUNDS[fcup.of - 2 - fcup.round] || tl('THE NEXT ROUND');
+      $('r-title').textContent = fcup.champion ? tl('CUP WINNER!') : fcup.won ? tl('THROUGH!') : tl('KNOCKED OUT');
+      $('r-title').className = 'r-title ' + (fcup.champion ? 'win champ' : fcup.won ? 'win' : 'loss');
+      setTimeout(() => { if (Game.state === 'results') this.toast(fcup.champion ? tl('YOU WON THE FRIEND CUP · +{0} COINS', [FCUP_PRIZE]) : fcup.won ? tl('YOU ARE THROUGH TO {0}', [next]) : tl('OUT OF THE CUP IN THE {0}', [round])); }, 1400);
+      if (fcup.champion) Trophy.show({ title: tl('CUP WINNER!'), sub: tl('FRIEND CUP · {0} PLAYERS · +{1} COINS', [fcup.size, FCUP_PRIZE]), club: Clubs.mine(), mates: [] });
+    }
+    this._againMode = 'online';
+    $('r-again').textContent = fcup ? tl('SEE THE BOARD') : !cup ? (msg.rematch ? tl('REMATCH') : tl('PLAY AGAIN')) : cup.champion ? (champs ? tl('NEW CHAMPIONS CUP') : tl('NEW WORLD CUP')) : cup.won ? tl('PLAY {0}', [WC_ROUNDS[cup.next]]) : tl('TRY AGAIN');
+    // in a party, the leader starts the next one (and brings you with them)
+    const party = Social.party;
+    if (party && party.members.length > 1 && !party.lead) $('r-again').textContent = tl('HOME');
+    $('results').hidden = false;
+    this.fitWords($('results'));
+    $('hud').hidden = true;
+    Input.reset();
+    this.resultsFanfare(outcome, {
+      coins: coins + streakBonus + levelCoins + wcPrize + fcupPrize + payCoins,
+      levelUp: lv.level > levelBefore,
+      champion: !!((cup && cup.champion) || (fcup && fcup.champion)),
+      rankUp: !!this._rankedUp,
+    });
+    this._rankedUp = false;
+    this._leaguePos = 0;
+    this.fetchLeaguePos();
+  },
+
+  // the orange box under the coins: your win streak, the weekend, and what they added
+  bonusLine(streak, bonus, extra, won) {
+    const box = $('r-streak'), parts = [];
+    // (with the weekend as well, the streak is just the flame and its number: one line either way)
+    if (streak >= 2) parts.push(bonus.why === 'weekend' ? `${FIRE_SVG}<b>${streak}</b>` : `${FIRE_SVG}<b>${streak}</b> ${tl('WIN STREAK')}`);
+    if (bonus.why === 'weekend') parts.push(tl('DOUBLE COINS WEEKEND'));
+    box.hidden = !parts.length;
+    box.classList.toggle('fire', streak >= 2);
+    box.innerHTML = parts.join(' · ') + (extra ? ` <span>+${fmtCoins(extra)}</span>` : '');
+    // ON FIRE ×3: a shout and some flame-coloured confetti once the card has settled
+    if (won && streak >= 2) setTimeout(() => {
+      if (Game.state !== 'results' || box.hidden) return;
+      const at = Pop.at(box);
+      Pop.shout(at.x, at.y - 26, tl('ON FIRE ×{0}!', [streak]), '#ff8a1f', 1200);
+      Pop.confetti(at.x, at.y, ['#ff5a1a', '#ff8a1f', '#ffe14d'], streak >= 5 ? 40 : 24);
+      Pop.ring(at.x, at.y, '#ff8a1f', 200, 460);
+    }, 1500);
+  },
+
+  // the wages line on the results: what your goals and assists for your club paid
+  wagesLine(pay, pens) {
+    if (!Clubs.clubMode()) return '';
+    if (!pay) return `<li class="wages over"><i></i><span>${tl('CONTRACT OVER · SIGN A NEW OFFER TO GET PAID')}</span></li>`;
+    const fk = !!(Game.match && Game.match.pens && Game.match.pens.fk);
+    const what = pens ? (fk ? tl('WAGES · FREE KICKS {0} × {1}', [pay.goals, pay.goalRate]) : tl('WAGES · PENALTIES {0} × {1}', [pay.goals, pay.goalRate])) : tl('WAGES · GOALS {0} × {1} · ASSISTS {2} × {3}', [pay.goals, pay.goalRate, pay.assists, pay.assistRate]);
+    return `<li class="wages ${pay.coins ? 'done' : ''}"><i></i><span>${what}</span><b><span class="coin"></span>${pay.coins}</b></li>`;
+  },
+
+  resultsAgain() {
+    const previous = Game.match && Game.match.club;
+    if (this._againMode === 'cup') Game.startMatch({ mode: 'cup' });
+    else if (this._againMode === 'newcup') { Cup.start(); Game.startMatch({ mode: 'cup' }); }
+    else if (this._againMode === 'pens') Game.startMatch({ mode: 'pens', club: Clubs.random(Clubs.mine(), previous) });
+    else if ((this._againMode === 'onlinepens' || this._againMode === 'onlinefk') && Game.match && Game.match.onlinePenEnd && Game.match.onlinePenEnd.rematch) Online.rematch(Game.match.onlinePenEnd.rematch);
+    else if (this._againMode === 'onlinepens') { Game.goHome(); Online.m = null; Online.findMatch('pens'); }
+    else if (this._againMode === 'fk') Game.startMatch({ mode: 'pens', fk: true, club: Clubs.random(Clubs.mine(), previous) });
+    else if (this._againMode === 'onlinefk') { Game.goHome(); Online.m = null; Online.findMatch('fk'); }
+    else if (this._againMode === 'pro') Game.startMatch({ mode: 'pro', format: (Game.match && Game.match.format) || Save.data.format, club: Clubs.random(Clubs.mine(), previous) });
+    else Game.startMatch({ mode: 'quick', format: (Game.match && Game.match.format) || Save.data.format, club: Clubs.random(Clubs.mine(), previous) });
+  },
+};
+
+// ===== Getting it onto a phone or desktop =====================================
+// The game has been a proper web app all along — a manifest, icons, a service worker —
+// so a phone can install it and run it fullscreen with no browser around it. Nothing
+// told anyone that, so there is a button now.
+//
+// Two browsers, two different jobs. Chrome, Edge and Android fire beforeinstallprompt
+// when they decide the site is installable and hand over an object you can fire later
+// from a tap: a real one-tap install. Safari has no such event and no API — Add to Home
+// Screen lives in its share menu and only a person can pick it — so on iPhone the
+// button shows the steps instead. Anywhere neither applies the button stays hidden.
+const Install = {
+  event: null,
+  init() {
+    window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); this.event = e; this.refresh(); });
+    window.addEventListener('appinstalled', () => {
+      this.event = null; this.refresh();
+      UI.toast(tl('INSTALLED! LOOK FOR MINI STRIKERS ON YOUR HOME SCREEN'));
+    });
+    // Inside a store app the game's files are the app's own: there is no offline copy to keep and
+    // no newer build to reload for (a new version arrives as an app update).
+    if (!NATIVE && 'serviceWorker' in navigator && location.protocol !== 'file:') {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    }
+    if (!NATIVE && location.protocol !== 'file:') this.watchForNewBuild();
+    this.refresh();
+  },
+  // Making sure a deploy actually reaches the person playing.
+  //
+  // The offline copy falls back to what it kept whenever the network is slow, and this game
+  // sleeps on a free server that takes the best part of a minute to wake. So the first visit
+  // after a quiet spell can come entirely out of the old copy — the game runs, it just runs
+  // last week's code. That is how a fixed bug comes back.
+  //
+  // /api/health never goes near the cache, so it can always be trusted for the real answer.
+  watchForNewBuild() {
+    // Only the real server stamps the build into the page. The little static server used while
+    // building the game does not, so the placeholder is still sitting there — and a page that
+    // does not know its own build has no business deciding it is out of date.
+    const known = /^[0-9]+$/.test(String(window.BUILD || ''));
+
+    // A new worker has taken over a page that already had one: what is on screen is the old
+    // version, so load it again. Only where there is a worker at all — the build check below
+    // is worth doing either way.
+    const sw = ('serviceWorker' in navigator) ? navigator.serviceWorker : null;
+    let had = !!(sw && sw.controller);
+    if (sw) sw.addEventListener('controllerchange', () => {
+      if (!had) { had = true; return; }           // the first worker ever: nothing to replace
+      this.whenCalm(() => this.freshen('a new version took over'));
+    });
+
+    // and the belt to that pair of braces: ask the server what the build should be
+    const check = async () => {
+      if (document.hidden || !navigator.onLine) return;
+      try {
+        const r = await fetch(API_BASE + '/api/health', { cache: 'no-store' });
+        const j = await r.json();
+        if (!j || !j.build) return;
+        // Never in the middle of something: a match, an open window, a search for a match, a half-typed
+        // sign-in. It used to reload on the spot, which could be the moment after START was tapped.
+        if (known && String(j.build) !== String(window.BUILD)) this.whenCalm(() => this.freshen('build ' + j.build + ' is out'));
+      } catch (e) { /* asleep, or no line: try again later */ }
+    };
+    check();
+    setInterval(check, 5 * 60000);
+    window.addEventListener('focus', check);
+  },
+
+  // run fn the next time nothing is going on (looked at every 10 s)
+  whenCalm(fn) {
+    if (this._calmWait) return;
+    const go = () => { if (UI.calm()) { this._calmWait = null; fn(); } else this._calmWait = setTimeout(go, 10000); };
+    this._calmWait = true;
+    go();
+  },
+  // Throw the kept copy away and load again — but only once for any one build, so a server that
+  // is still waking up can never put the game in a loop. Somebody already past the splash carries
+  // straight on after the reload, rather than being sent back to TAP TO START.
+  async freshen(why) {
+    const key = 'ms-freshened';
+    const stamp = String(window.BUILD || '?') + ':' + why.replace(/[^0-9]/g, '');
+    try { if (sessionStorage.getItem(key) === stamp) return; sessionStorage.setItem(key, stamp); } catch (e) { return; }
+    try { if (UI._entering) sessionStorage.setItem('ms-carry-on', '1'); } catch (e) { /* no storage */ }
+    Net.flushSave();
+    try {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (reg) await reg.update();
+    } catch (e) { /* nothing kept to throw away */ }
+    location.reload();
+  },
+
+  installed() {
+    return ['standalone', 'fullscreen', 'minimal-ui'].some((m) => matchMedia('(display-mode: ' + m + ')').matches)
+      || navigator.standalone === true; // the iOS way of saying it
+  },
+  ios() {
+    return /iphone|ipad|ipod/i.test(navigator.userAgent)
+      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // an iPad calling itself a Mac
+  },
+  refresh() {
+    // Always offered unless the game is already installed. It used to hide itself unless
+    // the browser had handed over an install event, which meant it was invisible on the
+    // phone it was built for — Chrome only fires that event once it feels like it, and
+    // Safari never does. Tapping it either installs or shows how.
+    $('btn-install').hidden = NATIVE || this.installed(); // no "get the app" inside the app
+    if (typeof Render !== 'undefined') Render._homeSpot = null;
+  },
+  go() {
+    if (this.event) {
+      const e = this.event;
+      this.event = null;
+      e.prompt();
+      e.userChoice.then(() => this.refresh()).catch(() => {});
+      return;
+    }
+    // no API here: show where the button they need actually is
+    $('install-how').innerHTML = this.ios()
+      ? `<b>${tl('1. Tap the Share button')}</b>${tl('the square with an arrow coming out of it, at the bottom of Safari')}<b>${tl('2. Scroll down and tap "Add to Home Screen"')}</b><b>${tl('3. Tap Add')}</b>${tl('Mini Strikers lands on your home screen and opens fullscreen, like any other game.')}`
+      : `<b>${tl('Open your browser menu')}</b>${tl('the three dots in the corner')}<b>${tl('Tap "Install app" or "Add to Home screen"')}</b>${tl('then confirm. The game opens fullscreen with no browser around it.')}`;
+    $('install-steps').hidden = false;
+  },
+};

@@ -1,0 +1,158 @@
+// Crates.
+//
+// Nothing is bought off a shelf any more: you buy a crate, it rolls, and you get one thing out of
+// it. Ten crates, cheapest to dearest. The cheap ones are mostly full of the old starter stuff and
+// hold a one-in-a-thousand chance of something great; the dear ones cannot give you junk at all,
+// and the very best things only ever come out of the top of the ladder.
+//
+// A crate never gives you something you already own — it picks from what you are missing — so the
+// money is never wasted, and the odds below are the odds of the *grade* you get.
+
+const CRATE_RARITIES = ['common', 'rare', 'epic', 'legendary', 'mythic'];
+
+const CRATES = [
+  { id: 'copper',   name: tl('COPPER CRATE'),   price: 800,    color: '#d08a5a', build: 'wood',  metal: '#8a5a32', gem: '#ffcc99', odds: { common: 86, rare: 13, epic: 0.9, legendary: 0.09, mythic: 0.01 } },
+  { id: 'bronze',   name: tl('BRONZE CRATE'),   price: 2000,   color: '#c08a4a', build: 'wood',  metal: '#8a6a3a', gem: '#ffd166', odds: { common: 72, rare: 22, epic: 5.4, legendary: 0.5, mythic: 0.1 } },
+  { id: 'silver',   name: tl('SILVER CRATE'),   price: 5000,   color: '#b9c2d6', build: 'wood',  metal: '#7d87a0', gem: '#eaf2ff', odds: { common: 52, rare: 33, epic: 13, legendary: 1.7, mythic: 0.3 } },
+  { id: 'gold',     name: tl('GOLD CRATE'),     price: 12000,  color: '#ffc21a', build: 'chest', metal: '#a8761a', gem: '#fff3a0', odds: { common: 30, rare: 40, epic: 24, legendary: 5.3, mythic: 0.7 } },
+  { id: 'ruby',     name: tl('RUBY CRATE'),     price: 25000,  color: '#e8283a', build: 'chest', metal: '#c8a24a', gem: '#ff9ab0', odds: { common: 12, rare: 42, epic: 35, legendary: 9.5, mythic: 1.5 } },
+  { id: 'sapphire', name: tl('SAPPHIRE CRATE'), price: 50000,  color: '#2f7bff', build: 'chest', metal: '#cfd8ea', gem: '#bfe0ff', odds: { common: 0, rare: 45, epic: 40, legendary: 12.5, mythic: 2.5 } },
+  { id: 'amethyst', name: tl('AMETHYST CRATE'), price: 70000,  color: '#9a4dff', build: 'chest', metal: '#5a2a9a', gem: '#e0c0ff', odds: { common: 0, rare: 38, epic: 44, legendary: 15, mythic: 3 } },
+  { id: 'emerald',  name: tl('EMERALD CRATE'),  price: 90000,  color: '#1fb86a', build: 'tech',  metal: '#0d6b3f', gem: '#8dffc4', odds: { common: 0, rare: 30, epic: 48, legendary: 18, mythic: 4 } },
+  { id: 'diamond',  name: tl('DIAMOND CRATE'),  price: 120000, color: '#7fe0ff', build: 'tech',  metal: '#3f7fa8', gem: '#ffffff', odds: { common: 0, rare: 12, epic: 52, legendary: 29, mythic: 7 } },
+  { id: 'obsidian', name: tl('OBSIDIAN CRATE'), price: 160000, color: '#3a3f5c', build: 'tech',  metal: '#1a1d2e', gem: '#9aa8d0', odds: { common: 0, rare: 6, epic: 51, legendary: 33, mythic: 10 } },
+  { id: 'cosmic',   name: tl('COSMIC CRATE'),   price: 195000, color: '#b04dff', build: 'tech',  metal: '#5a1f9a', gem: '#f0d8ff', odds: { common: 0, rare: 0, epic: 50, legendary: 38, mythic: 12 } },
+  { id: 'legend',   name: tl('LEGEND CRATE'),   price: 300000, color: '#ff8a1f', build: 'vault', metal: '#c8a24a', gem: '#fff3a0', odds: { common: 0, rare: 0, epic: 28, legendary: 52, mythic: 20 } },
+  { id: 'solar',    name: tl('SOLAR CRATE'),    price: 420000, color: '#ffa31f', build: 'vault', metal: '#c86a0a', gem: '#fff0c0', odds: { common: 0, rare: 0, epic: 14, legendary: 58, mythic: 28 } },
+  { id: 'goatcrate', name: tl('GOAT CRATE'),    price: 550000, color: '#ff3a6e', build: 'vault', metal: '#ffc21a', gem: '#ffffff', odds: { common: 0, rare: 0, epic: 0, legendary: 62, mythic: 38 } },
+  { id: 'infinity', name: tl('INFINITY CRATE'), price: 900000, color: '#ff3a6e', build: 'vault', metal: '#ffffff', gem: '#ffd6e4', odds: { common: 0, rare: 0, epic: 0, legendary: 45, mythic: 55 } },
+];
+
+// Everything a crate can hold, and where to find its definition.
+// (characters went in build 111: there is one player now, your own)
+// (emotes since build 120)
+const EMOTE_CRATE_WEIGHT = 0.5;
+const CRATE_KINDS = ['ball', 'trail', 'celebration', 'accessory', 'skill', 'emote'];
+
+const Crates = {
+  get(id) { return CRATES.find((c) => c.id === id) || null; },
+
+  list(kind) {
+    if (kind === 'character') return CHARACTERS.filter(charOk);
+    if (kind === 'ball') return BALLS;
+    if (kind === 'trail') return TRAILS;
+    if (kind === 'celebration') return CELEBRATIONS;
+    if (kind === 'skill') return SKILLS;
+    if (kind === 'emote') return typeof EMOTES !== 'undefined' ? EMOTES : [];
+    return ACCESSORIES;
+  },
+  def(kind, id) { return this.list(kind).find((x) => x.id === id) || null; },
+  name(kind, id) { const d = this.def(kind, id); return d ? d.name : id; },
+
+  // A grade for every item: what its own row says, or what it costs if it does not say.
+  rarity(kind, id) {
+    const d = this.def(kind, id);
+    if (d && d.rarity) return d.rarity === 'starter' || d.rarity === 'oneofone' ? 'common' : d.rarity;
+    const p = Shop.price(kind, id);
+    return p >= 120000 ? 'mythic' : p >= 25000 ? 'legendary' : p >= 6000 ? 'epic' : p >= 1000 ? 'rare' : 'common';
+  },
+
+  // everything of one grade that you have not got yet (a one-of-one is never in a crate)
+  missing(rarity) {
+    const out = [];
+    for (const kind of CRATE_KINDS) {
+      for (const item of this.list(kind)) {
+        if (item.rarity === 'oneofone' || item.only || item.starter) continue;
+        if (Shop.owns(kind, item.id)) continue;
+        if (this.rarity(kind, item.id) !== rarity) continue;
+        out.push({ kind, id: item.id });
+      }
+    }
+    return out;
+  },
+
+  // what the whole ladder still has in it
+  anyMissing() { return CRATE_RARITIES.some((r) => this.missing(r).length); },
+
+  // the grades a crate deals in, and how much it still has of each
+  stock(crate) {
+    const out = {};
+    for (const r of CRATE_RARITIES) if ((crate.odds[r] || 0) > 0) out[r] = this.missing(r).length;
+    return out;
+  },
+  // how many things this crate can still give you at all
+  left(crate) {
+    const st = this.stock(crate);
+    let n = 0;
+    for (const r in st) n += st[r];
+    return n;
+  },
+  // The highest grade a crate may fall back on when its own roll comes up empty: the best grade it
+  // offers at odds worth reading. Anything above that has to be rolled properly.
+  ceiling(crate) {
+    let top = CRATE_RARITIES[0];
+    for (const r of CRATE_RARITIES) if ((crate.odds[r] || 0) >= 10) top = r;
+    return top;
+  },
+
+  // Roll a grade on the crate's own odds and take something of it. An empty grade falls to the
+  // best cheaper grade it has; only if there is nothing cheaper does it climb, and never past the
+  // crate's ceiling — so a bronze crate can never become a cheap way to a mythic.
+  roll(crate) {
+    const odds = crate.odds;
+    let total = 0;
+    for (const r of CRATE_RARITIES) total += odds[r] || 0;
+    let pick = Math.random() * total, chosen = CRATE_RARITIES[0];
+    for (const r of CRATE_RARITIES) { pick -= odds[r] || 0; if (pick <= 0) { chosen = r; break; } }
+    const at = CRATE_RARITIES.indexOf(chosen);
+    const take = (r) => {
+      const pool = this.missing(r);
+      if (!pool.length) return null;
+      // an emote counts half (build 120): there are 150 of them, and counted in full they were half
+      // of everything a crate gave, crowding out the balls, trails and celebrations
+      let total = 0;
+      for (const it of pool) total += it.kind === 'emote' ? EMOTE_CRATE_WEIGHT : 1;
+      let x = Math.random() * total;
+      for (const it of pool) { x -= it.kind === 'emote' ? EMOTE_CRATE_WEIGHT : 1; if (x <= 0) return { ...it, rarity: r }; }
+      return { ...pool[pool.length - 1], rarity: r };
+    };
+    let got = take(chosen);
+    for (let i = at - 1; i >= 0 && !got; i--) if ((odds[CRATE_RARITIES[i]] || 0) > 0) got = take(CRATE_RARITIES[i]);
+    const top = CRATE_RARITIES.indexOf(this.ceiling(crate));
+    for (let i = at + 1; i <= top && !got; i++) if ((odds[CRATE_RARITIES[i]] || 0) > 0) got = take(CRATE_RARITIES[i]);
+    return got;
+  },
+
+  // the reel you watch: a run of things it could have given you, with the real one near the end
+  reel(crate, win, n = 44) {
+    const cells = [];
+    const grades = CRATE_RARITIES.filter((r) => (crate.odds[r] || 0) > 0);
+    const owned = [];
+    for (const kind of CRATE_KINDS) for (const item of this.list(kind)) {
+      if (item.rarity === 'oneofone' || item.only || item.starter) continue;
+      if (grades.includes(this.rarity(kind, item.id))) owned.push({ kind, id: item.id });
+    }
+    for (let i = 0; i < n; i++) cells.push(owned.length ? owned[(Math.random() * owned.length) | 0] : win);
+    if (win) cells[n - 9] = win;
+    return { cells, at: n - 9 };
+  },
+
+  // open one: take the coins, hand over the thing, remember it
+  open(crateId) {
+    const crate = this.get(crateId);
+    if (!crate) return null;
+    if (Save.data.coins < crate.price) return { poor: true };
+    const win = this.roll(crate);
+    if (!win) return { empty: true };
+    Save.data.coins -= crate.price;
+    Save.data.owned[win.kind] = Save.data.owned[win.kind] || [];
+    Save.data.owned[win.kind].push(win.id);
+    if (win.kind === 'emote' && typeof Emotes !== 'undefined') Emotes.got(win.id); // straight into your match menu if it has room
+    Save.data.crateCount = (Save.data.crateCount || 0) + 1;
+    Save.write();
+    if (typeof Missions !== 'undefined') Missions.bump('crate');
+    return win;
+  },
+};
+
+if (typeof module !== 'undefined') module.exports = { CRATES, Crates };

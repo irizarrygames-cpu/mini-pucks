@@ -1,0 +1,1806 @@
+// Panels: mode select, characters shop, customize shop, settings.
+Object.assign(UI, {
+  openModal(kind) {
+    const body = $('modal-body');
+    $('modal').hidden = false;
+    $('modal').dataset.kind = kind;
+    this['panel_' + kind](body);
+    this.fitWords(body);
+  },
+
+  closeModal() { $('modal').hidden = true; this.refreshHome(); },
+
+  // ---- PLAY: pick a mode ----
+  panel_play(body) {
+    $('modal-title').textContent = tl('PLAY');
+    const cup = Cup.state();
+    const quickClub = Clubs.random(Clubs.mine());
+    const pensClub = Clubs.random(Clubs.mine());
+    const fmt = Save.data.format || '4v4';
+    const club = Clubs.mine(), clubs = Clubs.clubMode();
+    const cupKind = clubs ? 'cc' : 'wc', wcRound = Online.cupRound(cupKind);
+    body.innerHTML = `
+      ${this.arenaSwitch()}
+      <div class="formats"><span>${tl('FORMAT')}</span>${['1v1', '2v2', '3v3', '4v4'].map((f) => `<button data-format="${f}" class="${f === fmt ? 'sel' : ''}">${f}</button>`).join('')}</div>
+      <div class="play-top">
+        <button class="mode quick" data-mode="quick">
+          <strong>${tl('QUICK MATCH')}</strong>
+          <p>${clubs ? tl('One match against a random club. Works with no connection.') : tl('One match against a random country. Works with no connection.')}</p>
+          <span class="tag">${clubs ? tl('COINS · WAGES · 3 CHALLENGES') : tl('COINS · XP · 3 CHALLENGES')}</span>
+        </button>
+        <button class="mode online" data-needs-net data-mode="online">
+          <strong>${tl('PLAY ONLINE')}</strong>
+          <p>${clubs ? tl('Real people from every country. Every goal and assist for {0} pays your wages.', [club.name]) : tl('Real people from every country. A win moves {0} up the league.', [club.name])}</p>
+          <span class="tag">${tl('ONLINE')}</span>
+        </button>
+        <div class="room-box">
+          <small>${tl('PLAY WITH FRIENDS')}</small>
+          <button class="mid-btn" data-needs-net data-room="create">${tl('CREATE ROOM')}</button>
+          <div class="join"><input id="join-code" maxlength="5" placeholder="${tl('CODE')}" autocomplete="off" autocapitalize="characters" spellcheck="false"><button class="mid-btn" data-needs-net data-room="join">${tl('JOIN')}</button></div>
+        </div>
+      </div>
+      <p class="note vs-bots">${tl('MORE WAYS TO PLAY')}</p>
+      <div class="play-more">
+        <button class="mode pro" data-mode="pro">
+          <strong>${tl('PRO MATCH')}</strong>
+          <p>${tl('A bigger pitch with the real rules: the ball can go out for throw-ins, corners and goal kicks.')}</p>
+          <span class="tag">${tl('2V2 TO 4V4 · THROW-INS · CORNERS')}</span>
+        </button>
+        <button class="mode ranked" data-needs-net data-mode="ranked">
+          <strong>${tl('RANKED')}</strong>
+          <p>${tl('1v1 for rank points. Win +10, draw +5, lose -5.')}</p>
+          <span class="tag">${tl('ONLINE · 1V1')}</span>
+        </button>
+        <button class="mode cup ${clubs ? 'champions' : ''}" data-mode="worldcup">
+          <strong>${Cup.name()}</strong>
+          <p>${tl('Real players online, or bots. Lose once and you are out.')}</p>
+          <span class="tag">${tl('ONLINE: {0} · BOTS: {1}', [WC_ROUNDS[wcRound], cup ? Cup.ROUNDS[cup.round] : tl('NEW CUP')])}</span>
+        </button>
+        <button class="mode pens" data-mode="pens">
+          <strong>${tl('PENALTY SHOOTOUT')}</strong>
+          <p>${tl('Five kicks each, then sudden death. Pick your corner, then save theirs.')}</p>
+          <span class="tag">${tl('VS {0}', [pensClub.name])}</span>
+        </button>
+        <button class="mode fk" data-mode="fk">
+          <strong>${tl('FREE KICKS')}</strong>
+          <p>${tl('Bend it over the wall or round it. Five each, then sudden death.')}</p>
+          <span class="tag">${tl('VS {0} · OR ONLINE', [pensClub.name])}</span>
+        </button>
+        <button class="mode friendcup" data-needs-net data-mode="friendcup">
+          <strong>${tl('FRIEND CUP')}</strong>
+          <p>${tl('A knockout between 4 or 8 friends. No draws.')}</p>
+          <span class="tag">${tl('ONLINE · WITH FRIENDS')}</span>
+        </button>
+        <button class="mode chal" data-mode="challenges">
+          <strong>${tl('SKILL CHALLENGES')}</strong>
+          <p>${tl('Target practice, keeper mode and a dribble gauntlet.')}</p>
+          <span class="tag">${tl('3 TESTS')}</span>
+        </button>
+        <button class="mode training" data-mode="training">
+          <strong>${tl('TRAINING')}</strong>
+          <p>${tl('No clock, no pressure. Practise shots, skills and tackles.')}</p>
+          <span class="tag">${tl('NO CLOCK')}</span>
+        </button>
+      </div>
+      <button class="mid-btn pick-btn" id="pick-opp" aria-expanded="false">${tl('PICK YOUR OPPONENT')}</button>
+      <div class="clubs-row ${clubs ? 'euro' : ''}" id="clubs-row" hidden>${Clubs.pool().filter((c) => c.id !== club.id).map((c) => `<button class="club-chip" data-club="${c.id}" style="--c:${clubUi(c)}" title="${tl('Quick match vs {0}', [c.name])}"><canvas width="42" height="${c.euro ? 42 : 28}" data-flag="${c.id}"></canvas><b>${c.short}</b><i>${'★'.repeat(c.euro ? c.stars : c.level + 1)}</i></button>`).join('')}</div>`;
+    this.bindArenaSwitch(body);
+    // ninety-odd flags are a lot to scroll past, so they wait behind a button
+    $('pick-opp').addEventListener('click', () => {
+      this.tap();
+      const row = $('clubs-row'), open = row.hidden;
+      row.hidden = !open;
+      $('pick-opp').setAttribute('aria-expanded', String(open));
+      $('pick-opp').textContent = open ? tl('HIDE OPPONENTS') : tl('PICK YOUR OPPONENT');
+      if (open) row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    });
+    body.querySelectorAll('canvas[data-flag]').forEach((cv) => this.flagBadge(cv, Clubs.get(cv.dataset.flag)));
+    body.querySelectorAll('[data-club]').forEach((b) => b.addEventListener('click', () => { this.tap(); Game.startMatch({ mode: 'quick', club: Clubs.get(b.dataset.club) }); }));
+    body.querySelectorAll('[data-format]').forEach((b) => b.addEventListener('click', () => {
+      Save.data.format = b.dataset.format; Save.write(); this.tap();
+      body.querySelectorAll('[data-format]').forEach((x) => x.classList.toggle('sel', x === b));
+    }));
+    body.querySelector('[data-mode="quick"]').addEventListener('click', () => { this.tap(); Game.startMatch({ mode: 'quick', club: quickClub }); });
+    const fmtNow = () => Save.data.format || '4v4';
+    body.querySelector('[data-mode="online"]').addEventListener('click', () => { this.tap(); Online.findMatch(fmtNow()); });
+    body.querySelector('[data-room="create"]').addEventListener('click', () => { this.tap(); Online.createRoom(fmtNow()); });
+    const join = () => { const code = body.querySelector('#join-code').value.trim().toUpperCase(); if (code.length < 4) { UI.toast(tl('ENTER THE ROOM CODE')); return; } this.tap(); Online.joinRoom(code); };
+    body.querySelector('[data-room="join"]').addEventListener('click', join);
+    body.querySelector('#join-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') join(); });
+    body.querySelector('[data-mode="pens"]').addEventListener('click', () => { this.tap(); this._pensClub = pensClub; this.openModal('pensmode'); });
+    body.querySelector('[data-mode="fk"]').addEventListener('click', () => { this.tap(); this._pensClub = pensClub; this.openModal('fkmode'); });
+    body.querySelector('[data-mode="challenges"]').addEventListener('click', () => { this.tap(); this.openModal('challenges'); });
+    body.querySelector('[data-mode="friendcup"]').addEventListener('click', () => { this.tap(); this.openModal('cup'); });
+    body.querySelector('[data-mode="ranked"]').addEventListener('click', () => { this.tap(); Online.findMatch('ranked'); });
+    // PRO MATCH: against the computer or online (panel_promode)
+    body.querySelector('[data-mode="pro"]').addEventListener('click', () => { this.tap(); this.openModal('promode'); });
+    body.querySelector('[data-mode="training"]').addEventListener('click', () => { this.tap(); Game.startMatch({ mode: 'training', club: Clubs.random(Clubs.mine()) }); });
+    body.querySelector('[data-mode="worldcup"]').addEventListener('click', () => { this.tap(); this.openModal('worldcup'); });
+  },
+
+  // ---- PENALTY SHOOTOUT: choose local or online without leaving the game UI ----
+  panel_pensmode(body) {
+    $('modal-title').textContent = tl('PENALTY SHOOTOUT');
+    const club = this._pensClub || Clubs.random(Clubs.mine());
+    body.innerHTML = `
+      <div class="modes pen-choice">
+        <button class="mode pens" data-pens="offline">
+          <strong>${tl('OFFLINE')}</strong>
+          <p>${tl('Play five kicks each against a computer-controlled opponent.')}</p>
+          <span class="tag">${tl('VS {0}', [club.name])}</span>
+        </button>
+        <button class="mode online" data-pens="online">
+          <strong>${tl('ONLINE')}</strong>
+          <p>${tl('Kick for kick against a real opponent, live.')}</p>
+          <span class="tag">${tl('ONLINE PENALTIES')}</span>
+        </button>
+      </div>`;
+    body.querySelector('[data-pens="offline"]').addEventListener('click', () => { this.tap(); Game.startMatch({ mode: 'pens', club }); });
+    body.querySelector('[data-pens="online"]').addEventListener('click', () => { this.tap(); Online.findMatch('pens'); });
+  },
+
+  // ---- PRO MATCH: the bigger pitch with throw-ins, corners and goal kicks, offline or online ----
+  // 2v2 to 4v4 only (with 1v1 picked on the PLAY screen it starts on 2v2 here, and says so).
+  panel_promode(body) {
+    $('modal-title').textContent = tl('PRO MATCH');
+    const saved = Save.data.format || '4v4', clubs = Clubs.clubMode(), club = Clubs.mine();
+    let fmt = ['2v2', '3v3', '4v4'].includes(saved) ? saved : '2v2';
+    const opp = Clubs.random(club);
+    body.innerHTML = `
+      <p class="note">${tl('A bigger pitch with the real rules: the ball can go out for throw-ins, corners and goal kicks.')}</p>
+      <div class="formats"><span>${tl('FORMAT')}</span>${['2v2', '3v3', '4v4'].map((f) => `<button data-pf="${f}" class="${f === fmt ? 'sel' : ''}">${f}</button>`).join('')}</div>
+      ${saved === '1v1' ? `<p class="note pro-note">${tl('PRO MATCH IS 2V2 OR BIGGER')}</p>` : ''}
+      <div class="modes pen-choice">
+        <button class="mode pro" data-pro="offline">
+          <strong>${tl('OFFLINE')}</strong>
+          <p>${clubs ? tl('One match against a random club. Works with no connection.') : tl('One match against a random country. Works with no connection.')}</p>
+          <span class="tag">${tl('VS {0}', [opp.name])}</span>
+        </button>
+        <button class="mode online" data-needs-net data-pro="online">
+          <strong>${tl('ONLINE')}</strong>
+          <p>${clubs ? tl('Real people from every country. Every goal and assist for {0} pays your wages.', [club.name]) : tl('Real people from every country. A win moves {0} up the league.', [club.name])}</p>
+          <span class="tag">${tl('ONLINE')}</span>
+        </button>
+      </div>`;
+    body.querySelectorAll('[data-pf]').forEach((b) => b.addEventListener('click', () => {
+      fmt = b.dataset.pf; Save.data.format = fmt; Save.write(); this.tap();
+      body.querySelectorAll('[data-pf]').forEach((x) => x.classList.toggle('sel', x === b));
+      const note = body.querySelector('.pro-note'); if (note) note.remove();
+    }));
+    body.querySelector('[data-pro="offline"]').addEventListener('click', () => { this.tap(); Game.startMatch({ mode: 'pro', format: fmt, club: opp }); });
+    body.querySelector('[data-pro="online"]').addEventListener('click', () => { this.tap(); Online.findMatch('pro/' + fmt); });
+  },
+
+  // ---- FREE KICKS: the same choice, for a free-kick shootout ----
+  panel_fkmode(body) {
+    $('modal-title').textContent = tl('FREE KICKS');
+    const club = this._pensClub || Clubs.random(Clubs.mine());
+    body.innerHTML = `
+      <div class="modes pen-choice">
+        <button class="mode pens fk" data-fk="offline">
+          <strong>${tl('OFFLINE')}</strong>
+          <p>${tl('Five free kicks each against a computer-controlled opponent. Soft and high goes over the wall; hard goes round it.')}</p>
+          <span class="tag">${tl('VS {0}', [club.name])}</span>
+        </button>
+        <button class="mode online" data-fk="online">
+          <strong>${tl('ONLINE')}</strong>
+          <p>${tl('Free kick for free kick against a real opponent, live.')}</p>
+          <span class="tag">${tl('ONLINE FREE KICKS')}</span>
+        </button>
+      </div>`;
+    body.querySelector('[data-fk="offline"]').addEventListener('click', () => { this.tap(); Game.startMatch({ mode: 'pens', fk: true, club }); });
+    body.querySelector('[data-fk="online"]').addEventListener('click', () => { this.tap(); Online.findMatch('fk'); });
+  },
+
+  // ---- FRIEND CUP: a knockout between four or eight friends ----
+  panel_cup(body) {
+    $('modal-title').textContent = tl('FRIEND CUP');
+    const c = Social.cup;
+    if (!Net.user) { body.innerHTML = `<p class="note">${tl('Log in to run a cup with your friends.')}</p>`; return; }
+    if (!c) {
+      body.innerHTML = `
+        <p class="note">${tl('A knockout between your friends. Everyone plays 1v1, the winner of each tie goes through, and the last one standing lifts the cup. No draws: golden goal decides it.')}</p>
+        <div class="cup-pick"><button class="big-btn" data-size="4">${tl('4 PLAYERS')}</button><button class="big-btn" data-size="8">${tl('8 PLAYERS')}</button></div>
+        <p class="note">${tl('You pick the size, then invite friends who are online. The draw is random.')}</p>`;
+      body.querySelectorAll('[data-size]').forEach((b) => b.addEventListener('click', () => { this.tap(); Net.send({ t: 'cup.create', size: Number(b.dataset.size) }); }));
+      return;
+    }
+    const you = Net.user.name, host = c.host === you;
+    const slots = [];
+    for (const p of c.players) slots.push(`<div class="cup-slot ${p.out ? 'out' : ''} ${p.name === you ? 'you' : ''}"><canvas width="36" height="24" data-club="${p.club}"></canvas><b>${esc(p.name)}</b>${p.name === c.host ? '<i class="crown"></i>' : ''}${p.gone ? `<small>${tl('OFFLINE')}</small>` : ''}</div>`);
+    for (const nm of c.invited) slots.push(`<div class="cup-slot asked"><b>${esc(nm)}</b><small>${tl('ASKED…')}</small>${host ? `<button class="fr-x" data-drop="${esc(nm)}" aria-label="${tl('Cancel')}">×</button>` : ''}</div>`);
+    while (slots.length < c.size) slots.push(`<div class="cup-slot empty"><b>${tl('EMPTY')}</b></div>`);
+
+    if (c.state === 'lobby') {
+      const free = Social.friends.filter((f) => f.status !== 'offline' && !c.players.some((p) => p.name === f.name) && !c.invited.includes(f.name));
+      body.innerHTML = `
+        <div class="cup-slots">${slots.join('')}</div>
+        ${host ? `<h3 class="fr-h">${tl('INVITE FRIENDS')}</h3>
+          ${free.length ? free.map((f) => `<div class="fr-row"><b>${esc(f.name)}</b><em class="fr-st on">${(FRIEND_STATUS[f.status] || FRIEND_STATUS.online)[0]}</em><button class="mid-btn blue" data-ask="${esc(f.name)}">${tl('INVITE')}</button></div>`).join('')
+            : `<p class="note">${tl('No friends online to ask right now.')}</p>`}` : `<p class="note">${tl('Waiting for the host to start it.')}</p>`}
+        <div class="cup-foot">
+          ${host ? `<button class="big-btn green" data-start ${c.players.length === c.size ? '' : 'disabled'}>${c.players.length === c.size ? tl('START THE CUP') : tl('WAITING · {0}/{1}', [c.players.length, c.size])}</button>` : ''}
+          <button class="mid-btn red" data-leave>${host ? tl('CALL IT OFF') : tl('LEAVE')}</button>
+        </div>`;
+    } else {
+      const left = Social.cupAt ? Math.max(0, Math.ceil((Social.cupAt - performance.now()) / 1000)) : 0;
+      const rounds = c.rounds.map((ties, r) => `
+        <h3 class="fr-h">${CUP_ROUNDS[c.of - 1 - r] || tl('ROUND {0}', [r + 1])}</h3>
+        <div class="cup-ties">${ties.map((t) => {
+          const line = (nm, sc, won) => `<span class="${won ? 'won' : ''} ${nm === you ? 'you' : ''}"><b>${esc(nm || '—')}</b><em>${sc === null || sc === undefined ? '' : sc}</em></span>`;
+          return `<div class="cup-tie ${t.live ? 'live' : ''}">${line(t.a, t.sa, t.w && t.w === t.a)}${line(t.b, t.sb, t.w && t.w === t.b)}${t.live ? `<i class="tag-live">${tl('LIVE')}</i>` : ''}</div>`;
+        }).join('')}</div>`).join('');
+      body.innerHTML = `
+        ${c.state === 'done' ? `<div class="cup-champ"><small>${tl('WINNER')}</small><strong>${esc(c.champion || tl('NOBODY'))}</strong></div>`
+        : left ? `<p class="note big-note">${tl('{0} STARTS IN {1}…', [CUP_ROUNDS[c.of - 1 - c.round] || tl('THE NEXT ROUND'), left])}</p>`
+          : `<p class="note big-note">${tl('MATCHES ARE ON')}</p>`}
+        ${rounds}
+        <div class="cup-foot"><button class="mid-btn red" data-leave>${c.state === 'done' ? tl('CLOSE THE CUP') : tl('GIVE UP')}</button></div>`;
+    }
+    body.querySelectorAll('canvas[data-club]').forEach((cv) => UI.flagBadge(cv, Clubs.get(cv.dataset.club)));
+    const on = (sel, fn) => body.querySelectorAll(sel).forEach((b) => b.addEventListener('click', (e) => { e.preventDefault(); fn(b); }));
+    on('[data-ask]', (b) => { this.tap(); Net.send({ t: 'cup.invite', name: b.dataset.ask }); });
+    on('[data-drop]', (b) => { this.tap(); Net.send({ t: 'cup.uninvite', name: b.dataset.drop }); });
+    on('[data-start]', () => { this.tap(); Net.send({ t: 'cup.start' }); });
+    on('[data-leave]', () => { this.tap(); Net.send({ t: 'cup.leave' }); this.closeModal(); });
+  },
+
+  // ---- LEADERBOARD: the ranked ladder, best first ----
+  async panel_leaderboard(body) {
+    $('modal-title').textContent = tl('LEADERBOARD');
+    body.innerHTML = `<p class="note">${tl('Loading the ladder…')}</p>`;
+    const r = await Net.leaderboard();
+    if ($('modal').dataset.kind !== 'leaderboard') return;
+    if (!r || !r.ok) { body.innerHTML = `<p class="note">${r && r.msg ? I18N.server(r.msg) : tl("Can't reach the server")}</p>`; return; }
+    const days = Math.max(0, Math.ceil((r.ends - Date.now()) / 86400000));
+    const me = Net.user && Net.user.name;
+    const row = (x) => {
+      const t = RANK_TIERS.find((y) => y.id === x.tier) || RANK_TIERS[0];
+      return `<li class="${x.name === me ? 'you' : ''} ${x.pos <= 3 ? 'podium p' + x.pos : ''}"${x.name !== me ? ` data-player="${esc(x.name)}" role="button" tabindex="0"` : ''}>
+        <b>${x.pos}</b><canvas width="42" height="28" data-club="${x.club}"></canvas>
+        <span>${esc(x.name)}</span>
+        <em style="--t:${t.color}">${x.tierName}</em>
+        <i>${x.rp}<small>${tl('RP')}</small></i></li>`;
+    };
+    const outside = r.you && r.you.pos > r.top.length;
+    body.innerHTML = `
+      <p class="note">${tlN(r.players, '{0} player on the board this season', '{0} players on the board this season')} · ${tlN(days, '{0} day left', '{0} days left')}. ${tl('Rank points come from RANKED matches only.')}</p>
+      ${r.top.length ? `<ol class="lb-board">${r.top.map(row).join('')}</ol>` : `<p class="note">${tl('Nobody has won a ranked match yet. Be the first one on it.')}</p>`}
+      ${outside ? `<h3 class="fr-h">${tl('YOU')}</h3><ol class="lb-board">${row(r.you)}</ol>` : ''}
+      ${!r.you && Net.user ? `<p class="note">${tl('Win a ranked match and you are on it.')}</p>` : ''}
+      <div class="cup-foot"><button class="mid-btn" data-open2="ranked">${tl('YOUR RANK')}</button><button class="big-btn green" data-rankplay>${tl('PLAY RANKED')}</button></div>`;
+    body.querySelectorAll('canvas[data-club]').forEach((cv) => this.flagBadge(cv, Clubs.get(cv.dataset.club)));
+    // tap anyone else on the board to block them or report their name
+    body.querySelectorAll('[data-player]').forEach((li) => li.addEventListener('click', () => { this.tap(); this.openPlayer(li.dataset.player, 'leaderboard'); }));
+    const go = body.querySelector('[data-rankplay]');
+    if (go) go.addEventListener('click', () => { this.tap(); this.closeModal(); Online.findMatch('ranked'); });
+    const back = body.querySelector('[data-open2="ranked"]');
+    if (back) back.addEventListener('click', () => { this.tap(); this.openModal('ranked'); });
+  },
+
+  // ---- RANKED: your tier this season and what is left to climb ----
+  panel_ranked(body) {
+    $('modal-title').textContent = tl('RANKED');
+    const rk = (Net.user && Net.user.rank) || null;
+    if (!rk) { body.innerHTML = `<p class="note">${tl('Play an online match and your rank starts here.')}</p>`; return; }
+    const tier = RANK_TIERS.find((x) => x.id === rk.tier) || RANK_TIERS[0];
+    const next = rk.next;
+    const into = next ? clamp((rk.rp - tier.at) / (next.at - tier.at), 0, 1) : 1;
+    const days = Math.max(0, Math.ceil((rk.ends - Date.now()) / 86400000));
+    body.innerHTML = `
+      <div class="rank-head" style="--t:${tier.color}">
+        <div class="rank-badge"><i></i><b>${tier.name}</b></div>
+        <div class="rank-rp"><b>${rk.rp}</b><small>${tl('RANK POINTS')}</small></div>
+      </div>
+      <div class="rank-bar"><b style="width:${Math.round(into * 100)}%;background:${tier.color}"></b></div>
+      <p class="note">${next ? tl('{0} RP TO {1}', [Math.max(0, next.at - rk.rp), next.name]) : tl('TOP TIER — NOBODY IS ABOVE YOU')} · ${tlN(days, 'SEASON ENDS IN {0} DAY', 'SEASON ENDS IN {0} DAYS')}</p>
+      <div class="rank-stats"><span>${tl('WON')} <b>${rk.wins}</b></span><span>${tl('PLAYED')} <b>${rk.played}</b></span><span>${tl('BEST')} <b>${rk.best}</b></span></div>
+      <h3 class="fr-h">${tl('TIERS · WHAT EACH PAYS WHEN THE SEASON ENDS')}</h3>
+      <div class="rank-tiers">${RANK_TIERS.map((x) => `<div class="rank-tier ${x.id === tier.id ? 'you' : ''}" style="--t:${x.color}"><i></i><b>${x.name}</b><small>${tl('{0} RP', [x.at])}</small><em><span class="coin"></span>${fmtCoins(x.reward)}</em></div>`).join('')}</div>
+      <div class="rank-how"><b>${tl('HOW POINTS WORK')}</b><span>${tl('WIN')} <em>+10</em></span><span>${tl('DRAW')} <em>+5</em></span><span>${tl('LOSE')} <em>-5</em></span><span>${tl('EACH CHALLENGE YOU WIN WITH')} <em>+1</em></span></div>
+      <p class="note">${tl('Only RANKED matches move your rank — 1v1, from PLAY. Every ranked match sets you three challenges, each worth a point if you win the match. A loss costs 5 points (so does leaving a ranked match), but you never drop below 0. When a season ends you are paid for the tier you finished in and the next one starts you part of the way back down.')}</p>
+      <div class="cup-foot"><button class="mid-btn" data-board>${tl('LEADERBOARD')}</button><button class="big-btn green rank-play" data-rankplay>${tl('PLAY RANKED')}</button></div>`;
+    const lb = body.querySelector('[data-board]');
+    if (lb) lb.addEventListener('click', () => { this.tap(); this.openModal('leaderboard'); });
+    const go = body.querySelector('[data-rankplay]');
+    if (go) go.addEventListener('click', () => { this.tap(); this.closeModal(); Online.findMatch('ranked'); });
+  },
+
+  // ---- WORLD CUP: two cups side by side, online and vs bots, each with its road to the final ----
+  panel_worldcup(body) {
+    // the World Cup for your country, the Champions Cup for your club: the same two cups
+    const champs = Cup.champions(), kind = champs ? 'cc' : 'wc';
+    $('modal-title').textContent = Cup.name();
+    const fmt = Save.data.format || '4v4';
+    const flagCell = (id) => { const c = Clubs.get(id); return `<span><canvas width="42" height="${c.euro ? 42 : 28}" data-flag="${c.id}"${c.euro ? ' class="crest"' : ''}></canvas>${c.short}</span>`; };
+    // online: the round you're in comes from the server; this run's results from your last matches
+    const round = Online.cupRound(kind), rec = Net.user && Net.user[kind], titles = (rec && rec.titles) || 0;
+    const runAll = champs ? Career.state().run : Array.isArray(Save.data.wcRun) ? Save.data.wcRun : [];
+    const run = runAll.length === round ? runAll : [];
+    const online = WC_ROUNDS.map((name, i) => {
+      const r = run[i];
+      const cls = i < round ? 'won' : i === round ? 'next' : '';
+      return `<li class="${cls}"><small>${name}</small>${r ? flagCell(r.club) : `<span>${i === round ? tl('NEXT') : '—'}</span>`}<em>${r ? `${r.mine}-${r.theirs}` : ''}</em></li>`;
+    }).join('');
+    // bots: three set opponents per cup
+    const cup = Cup.state();
+    const bots = Cup.ROUNDS.map((name, i) => {
+      const res = cup && cup.results[i];
+      const cls = !cup ? '' : res ? (res.won ? 'won' : 'lost') : i === cup.round ? 'next' : '';
+      return `<li class="${cls}"><small>${name}</small>${cup ? flagCell(cup.opponents[i]) : '<span>?</span>'}<em>${res ? `${res.blue}-${res.red}` : ''}</em></li>`;
+    }).join('');
+    body.innerHTML = `
+      <div class="formats"><span>${tl('FORMAT')}</span>${['1v1', '2v2', '3v3', '4v4'].map((f) => `<button data-format="${f}" class="${f === fmt ? 'sel' : ''}">${f}</button>`).join('')}</div>
+      <div class="wc-panels">
+        <section class="wc-panel online">
+          <header><strong>${tl('ONLINE')}</strong><small>${tl('Against real players from every country, round of 16 to the final.')}</small></header>
+          <ol class="wc-bracket">${online}</ol>
+          <div class="wc-foot"><span class="tag">${tl('WIN IT: +{0} COINS', [champs ? CC_PRIZE : WC_PRIZE])}${titles ? ' · ' + tl('WON {0}', [titles]) : ''}</span><button class="mid-btn" data-needs-net data-cup="online">${tl('PLAY {0}', [WC_ROUNDS[round]])}</button></div>
+        </section>
+        <section class="wc-panel bots">
+          <header><strong>${tl('VS BOTS')}</strong><small>${tl('Three knockout matches offline, each one tougher.')}</small></header>
+          <ol class="wc-bracket">${bots}</ol>
+          <div class="wc-foot"><span class="tag">${tl('WIN IT: +{0} COINS', [Cup.prize()])}${(champs ? Career.state().titles : Save.data.trophies) ? ' · ' + tl('WON {0}', [champs ? Career.state().titles : Save.data.trophies]) : ''}</span><button class="mid-btn" data-cup="bots">${cup ? tl('PLAY {0}', [Cup.ROUNDS[cup.round]]) : tl('START CUP')}</button></div>
+        </section>
+      </div>
+      <p class="note" style="margin-top:12px">${tl('No draws in either cup: level at full time goes to golden goal. Lose once and you\'re out. Win it and lift the trophy.')}</p>`;
+    body.querySelectorAll('canvas[data-flag]').forEach((cv) => this.flagBadge(cv, Clubs.get(cv.dataset.flag)));
+    body.querySelectorAll('[data-format]').forEach((b) => b.addEventListener('click', () => {
+      Save.data.format = b.dataset.format; Save.write(); this.tap();
+      body.querySelectorAll('[data-format]').forEach((x) => x.classList.toggle('sel', x === b));
+    }));
+    body.querySelector('[data-cup="online"]').addEventListener('click', () => { this.tap(); Online.findMatch(Save.data.format || '4v4', kind); });
+    body.querySelector('[data-cup="bots"]').addEventListener('click', () => {
+      this.tap();
+      if (!Cup.state()) Cup.start();
+      Game.startMatch({ mode: 'cup' });
+    });
+  },
+
+  // Redraw a panel without losing your place in it.
+  //
+  // Panels redraw themselves after you equip something, so the card you picked shows as the one
+  // you are wearing. The redraw replaces the element you were scrolling with a brand new one,
+  // and a brand new one starts at the top — so equipping a skill near the bottom of forty-one
+  // threw you back up to Classic every time.
+  //
+  // The positions are remembered by selector, not by element: the elements themselves do not
+  // survive the redraw, but a '.trail-grid' before is a '.trail-grid' after.
+  redraw(body, render) {
+    const key = (el) => {
+      if (el === body) return ':body';
+      if (el === body.parentElement) return ':parent';
+      const cls = String(el.className || '').trim().split(/\s+/)[0];
+      return cls ? '.' + cls : el.tagName.toLowerCase();
+    };
+    const marks = [];
+    for (const el of [body, body.parentElement, ...body.querySelectorAll('*')]) {
+      if (el && el.scrollTop > 0) marks.push([key(el), el.scrollTop]);
+    }
+    render();
+    for (const [sel, top] of marks) {
+      const el = sel === ':body' ? body : sel === ':parent' ? body.parentElement : body.querySelector(sel);
+      if (el) el.scrollTop = top;
+    }
+  },
+
+  // shared buy/equip card behaviour: first tap on a locked item arms "BUY", second tap buys
+  shopCard(el, kind, id, onEquip) {
+    el.addEventListener('click', () => {
+      if (Shop.owns(kind, id)) { this.tap(); onEquip(); return; }
+      Sound.steal();
+      el.classList.add('nope'); setTimeout(() => el.classList.remove('nope'), 400);
+      this.toast(kind === 'emote' ? tl('FIND IT IN CRATES OR THE DAILY EMOTE SHOP') : tl('OPEN CRATES TO FIND THIS ONE'));
+    });
+  },
+
+  // Nothing is sold item by item any more. An item you have not got says which grade of crate it
+  // is hiding in instead.
+  priceTag(kind, id) {
+    if (Shop.owns(kind, id)) return '';
+    const rar = Crates.rarity(kind, id);
+    return `<span class="price locked-tag" style="--r:${RARITIES[rar].color}"><i></i>${RARITIES[rar].name}</span><span class="buy">${kind === 'emote' ? tl('CRATES · SHOP') : tl('FROM CRATES')}</span>`;
+  },
+
+  // a season pass item's tag in CUSTOMIZE: which pass it came from, never a price
+  seasonTag() { return `<span class="em-grade season-tag" style="--r:${RARITIES.season.color}">${RARITIES.season.name}</span>`; },
+
+  coinsLine() { return `<div class="panel-coins"><span class="coin"></span><b>${fmtCoins(Save.data.coins)}</b></div>`; },
+
+  // ---- missions: jobs worth coins ----
+  panel_missions(body) {
+    $('modal-title').textContent = tl('MISSIONS');
+    const m = Missions.state();
+    const row = (job, big) => {
+      const def = Missions.def(job.id);
+      if (!def) return '';
+      const done = job.n >= def.n, pct = Math.round((job.n / def.n) * 100);
+      return `<div class="mission ${big ? 'big' : ''} ${job.done ? 'paid' : done ? 'ready' : ''}">
+        <div class="m-top"><strong>${def.text.replace('{n}', def.n)}</strong><span class="m-coins"><span class="coin"></span>${fmtCoins(def.coins)}</span></div>
+        <i class="m-bar"><b style="width:${Math.min(100, pct)}%"></b></i>
+        <div class="m-bot"><em>${Math.min(job.n, def.n)} / ${def.n}</em>
+        ${job.done ? `<span class="m-paid">${tl('CLAIMED')}</span>` : done ? `<button class="m-claim" data-claim="${job.id}">${tl('CLAIM')}</button>` : ''}</div>
+      </div>`;
+    };
+    // "day N of your run" only while the run is alive: a new player has no day 0, and after a
+    // missed day the saved number is stale (the next claim starts again at day 1)
+    const dl = Save.data.daily || {};
+    const runAlive = dl.last && dl.streak > 0 && Daily.dayNum(Daily.key()) - Daily.dayNum(dl.last) <= 1;
+    const streak = runAlive ? dl.streak : 0;
+    body.innerHTML = `${this.coinsLine()}
+      <p class="note">${tl('Jobs pay coins, and coins open crates. They swap over at midnight; the big one lasts the week.')}</p>
+      <div class="m-head">${tl('TODAY')}${streak ? `<small>${tl('day {0} of your run', [streak])}</small>` : ''}</div>
+      <div class="mission-list">${m.daily.map((j) => row(j, false)).join('')}</div>
+      <div class="m-head">${tl('THIS WEEK')}</div>
+      <div class="mission-list">${m.weekly ? row(m.weekly, true) : ''}</div>`;
+    body.querySelectorAll('[data-claim]').forEach((b) => b.addEventListener('click', () => {
+      const got = Missions.claim(b.dataset.claim);
+      if (!got) return;
+      Sound.powerReady();
+      // the coins actually go somewhere, rather than a number quietly changing
+      const at = Pop.at(b);
+      Pop.coins(b, got >= 5000 ? 16 : 10);
+      Pop.ring(at.x, at.y, '#ffc21a', 180, 420);
+      Pop.shout(at.x, at.y - 24, '+' + fmtCoins(got), '#ffc21a', 900);
+      Pop.confetti(at.x, at.y, ['#ffc21a', '#ffffff', '#35c06a'], got >= 5000 ? 34 : 18);
+      this.toast(tl('+{0} COINS', [fmtCoins(got)]));
+      this.redraw(body, () => this.panel_missions(body));
+      this.refreshHome();
+    }));
+  },
+
+  // ---- collection: everything in the game, and how much of it is yours ----
+  panel_collection(body) {
+    $('modal-title').textContent = tl('COLLECTION');
+    const kinds = [['ball', tl('BALLS')], ['trail', tl('POWER TRAILS')], ['celebration', tl('CELEBRATIONS')], ['accessory', tl('ACCESSORIES')], ['skill', tl('SKILL MOVES')], ['emote', tl('EMOTES')]];
+    let own = 0, all = 0;
+    const order = ['common', 'rare', 'epic', 'legendary', 'mythic'];
+    let best = null, bestRank = -1;
+    const rows = kinds.map(([kind, label]) => {
+      const list = Crates.list(kind).filter((x) => x.rarity !== 'oneofone' && !x.only);
+      const mine = list.filter((x) => Shop.owns(kind, x.id));
+      own += mine.length; all += list.length;
+      for (const it of mine) { const r = order.indexOf(Crates.rarity(kind, it.id)); if (r > bestRank) { bestRank = r; best = { kind, id: it.id }; } }
+      const byRarity = order.map((r) => {
+        const of = list.filter((x) => Crates.rarity(kind, x.id) === r);
+        if (!of.length) return '';
+        const got = of.filter((x) => Shop.owns(kind, x.id)).length;
+        return `<i style="--r:${RARITIES[r].color}">${got}/${of.length}</i>`;
+      }).join('');
+      const pct = Math.round((mine.length / Math.max(1, list.length)) * 100);
+      return `<div class="coll-row">
+        <div class="coll-top"><strong>${label}</strong><em>${mine.length} / ${list.length}</em></div>
+        <i class="coll-bar"><b style="width:${pct}%"></b></i>
+        <div class="coll-rar">${byRarity}</div>
+      </div>`;
+    }).join('');
+    const pct = Math.round((own / Math.max(1, all)) * 100);
+    body.innerHTML = `<div class="coll-head">
+        <div class="coll-big"><b>${pct}%</b><small>${tl('{0} of {1} things', [own, all])}</small><i class="coll-bar wide"><b style="width:${pct}%"></b></i></div>
+        <div class="coll-best"><small>${tl('BEST FIND')}</small><canvas id="coll-best-art" width="120" height="120"></canvas>
+          <strong id="coll-best-name">—</strong></div>
+      </div>
+      <div class="coll-list">${rows}</div>
+      <button class="big-btn green" id="coll-crates">${tl('OPEN CRATES')}</button>`;
+    const art = $('coll-best-art');
+    if (best && art) {
+      this.itemSwatch(art, best);
+      const rar = Crates.rarity(best.kind, best.id);
+      $('coll-best-name').textContent = Crates.name(best.kind, best.id);
+      $('coll-best-name').style.color = RARITIES[rar].color;
+    } else if (art) {
+      art.getContext('2d').clearRect(0, 0, art.width, art.height);
+      $('coll-best-name').textContent = tl('NOTHING YET');
+    }
+    $('coll-crates').addEventListener('click', () => { this.tap(); this.openModal('crates'); });
+  },
+
+  // ---- crates: the only way to get anything new ----
+  // A grown-up check for anything that takes the player out of the game (a web link) or spends
+  // real money. A few numbers written out in words: easy for a grown-up, not something a young
+  // player gets past by tapping. Resolves true if they typed them right, false if they backed out.
+  // (z: over what it shows — the sign-in page is at 40)
+  grownUpCheck(why, z = 25) {
+    return new Promise((resolve) => {
+      Store.newGate();
+      const el = document.createElement('div');
+      el.className = 'overlay grownup';
+      el.style.zIndex = z;
+      el.innerHTML = `<div class="panel small"><div class="gate">
+        <strong>${tl('ASK A GROWN-UP')}</strong>
+        <p>${why}</p>
+        <p>${tl('To go on, a grown-up types these numbers, with no spaces:')}</p>
+        <div class="gate-words">${Store.gate.words}</div>
+        <input inputmode="numeric" autocomplete="off" maxlength="12" placeholder="${tl('THE NUMBERS')}">
+        <p class="note gate-msg"></p>
+        <div class="gate-btns"><button class="mid-btn" data-no>${tl('CANCEL')}</button><button class="mid-btn green" data-ok>${tl('CONTINUE')}</button></div>
+      </div></div>`;
+      document.body.appendChild(el);
+      const input = el.querySelector('input');
+      const done = (v) => { el.remove(); resolve(v); };
+      const go = () => {
+        if (Store.gatePassed(input.value)) { done(true); return; }
+        Store.newGate();
+        el.querySelector('.gate-words').textContent = Store.gate.words;
+        el.querySelector('.gate-msg').textContent = tl('Not quite. Here are some new numbers.');
+        input.value = ''; input.focus();
+      };
+      el.querySelector('[data-ok]').addEventListener('click', () => { this.tap(); go(); });
+      el.querySelector('[data-no]').addEventListener('click', () => { this.tap(); done(false); });
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+      input.focus();
+    });
+  },
+
+  // A recovery code, shown this once. kind: 'new' (just signed up), 'reset' (one was just used, this
+  // is the next), 'made' (asked for in Settings). Only its scrambled form is kept anywhere else.
+  showCode(code, kind) {
+    const el = document.createElement('div');
+    el.className = 'overlay grownup sheet';
+    el.style.zIndex = 45; // over the sign-in page (40) as well as the game
+    const why = kind === 'reset' ? tl('Your password is changed, and the code you used is used up. This is your new one.')
+      : kind === 'made' ? tl('This is your new code. Any old one stops working.')
+        : tl('If you ever forget your password, this code gets you back in.');
+    el.innerHTML = `<div class="panel small"><div class="gate rcode">
+      <strong>${tl('YOUR RECOVERY CODE')}</strong>
+      <p>${why}</p>
+      <div class="gate-words rcode-code">${esc(code)}</div>
+      <p>${tl('Write it down and keep it somewhere safe. It is only shown this once: nobody can look it up for you later.')}</p>
+      <div class="gate-btns"><button class="mid-btn" data-copy>${tl('COPY')}</button><button class="mid-btn green" data-no>${tl('I WROTE IT DOWN')}</button></div>
+    </div></div>`;
+    document.body.appendChild(el);
+    // the button says how it went: a toast would be under this card's own dimmed backdrop
+    const copy = el.querySelector('[data-copy]');
+    copy.addEventListener('click', async () => {
+      this.tap();
+      let ok = false;
+      try { await navigator.clipboard.writeText(code); ok = true; } catch (e) { /* no clipboard here */ }
+      copy.textContent = ok ? tl('COPIED!') : tl("CAN'T COPY");
+    });
+    el.querySelector('[data-no]').addEventListener('click', () => { this.tap(); el.remove(); if (Net.user) Net.user.hasRecovery = true; });
+  },
+
+  // Forgot the password: username, recovery code, new password. Opened from the sign-in page.
+  showForgot() {
+    const el = document.createElement('div');
+    el.className = 'overlay grownup sheet';
+    el.style.zIndex = 45; // over the sign-in page (40), where it is opened from
+    el.innerHTML = `<div class="panel small fg-panel"><form class="gate forgot" autocomplete="off" novalidate>
+      <strong>${tl('FORGOT YOUR PASSWORD?')}</strong>
+      <p>${tl('Type your username and the recovery code you wrote down, then pick a new password.')}</p>
+      <input data-f="user" maxlength="14" placeholder="${tl('USERNAME')}" autocapitalize="off" autocorrect="off" spellcheck="false">
+      <input data-f="code" maxlength="24" placeholder="${tl('RECOVERY CODE')}" autocapitalize="characters" autocorrect="off" spellcheck="false">
+      <input data-f="pass" type="password" maxlength="200" placeholder="${tl('NEW PASSWORD')}" autocomplete="new-password">
+      <input data-f="pass2" type="password" maxlength="200" placeholder="${tl('NEW PASSWORD AGAIN')}" autocomplete="new-password">
+      <p class="note fg-msg"></p>
+      <div class="gate-btns"><button type="button" class="mid-btn" data-no>${tl('BACK')}</button><button type="submit" class="mid-btn green">${tl('RESET IT')}</button></div>
+      <p class="fg-none">${tl('No code? Then the password can\'t be reset: accounts have no email to send anything to.')}</p>
+    </form></div>`;
+    document.body.appendChild(el);
+    const f = (k) => el.querySelector(`[data-f="${k}"]`);
+    const msg = el.querySelector('.fg-msg'), go = el.querySelector('button[type=submit]');
+    f('user').value = $('auth-user').value.trim();
+    (f('user').value ? f('code') : f('user')).focus();
+    el.querySelector('[data-no]').addEventListener('click', () => { this.tap(); el.remove(); });
+    el.querySelector('form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const user = f('user').value.trim(), code = f('code').value, pass = f('pass').value;
+      msg.classList.add('bad');
+      if (!user || !code.trim() || !pass) { msg.textContent = tl('Fill in all four boxes.'); return; }
+      if (pass !== f('pass2').value) { msg.textContent = tl('The two new passwords do not match.'); return; }
+      go.disabled = true; msg.classList.remove('bad'); msg.textContent = tl('Checking the code…');
+      const slow = setTimeout(() => { if (go.disabled) msg.textContent = Net.WAKING_MSG; }, 3000);
+      let r = null;
+      try { r = await Net.recover(user, code, pass); } catch (err) { r = null; }
+      clearTimeout(slow);
+      go.disabled = false;
+      if (!r) { msg.classList.add('bad'); msg.textContent = Net.noWifi() ? Net.NO_WIFI_MSG : tl("Can't reach the server. Try again in a minute."); return; }
+      if (!r.ok) { msg.classList.add('bad'); msg.textContent = r.msg ? I18N.server(r.msg) : tl('That did not work'); Sound.steal(); return; }
+      el.remove();
+      $('auth-pass').value = '';
+      $('auth-user').value = r.name || user;
+      this.signedIn(false);      // signed in, and the new code comes up to be written down
+    });
+  },
+
+  // ---- one player: block them, or report their username ----
+  // back: the window to go back to (friends, leaderboard); a name of null asks for one
+  openPlayer(name, back) { this._player = { name: name ? String(name).toUpperCase() : null, back: back || null }; this.openModal('player'); },
+  panel_player(body) {
+    $('modal-title').textContent = tl('PLAYER');
+    const p = this._player || { name: null, back: null }, S = Social;
+    const backBtn = p.back ? `<div class="cup-foot"><button class="mid-btn" data-back>${tl('BACK')}</button></div>` : '';
+    const wire = () => { const b = body.querySelector('[data-back]'); if (b) b.addEventListener('click', () => { this.tap(); this.openModal(p.back); }); };
+    if (!S.signedIn()) { body.innerHTML = `<p class="note">${tl('Log in to block or report players.')}</p>${backBtn}`; wire(); return; }
+    if (!Net.wsReady) Net.openSocket();
+    if (!p.name) {
+      body.innerHTML = `<form class="fr-add pl-find" autocomplete="off"><input id="pl-name" maxlength="14" placeholder="${tl('THEIR USERNAME')}" autocapitalize="off" spellcheck="false"><button class="mid-btn green" type="submit">${tl('FIND')}</button></form>
+        <p class="note">${tl('Type the username of the player you want to block, or whose name you want to report.')}</p>${backBtn}`;
+      body.querySelector('.pl-find').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const name = body.querySelector('#pl-name').value.trim();
+        if (name.length < 3) { this.toast(tl('TYPE THEIR USERNAME')); return; }
+        this.tap();
+        this._player = { name: name.toUpperCase(), back: p.back };
+        this.panel_player(body);
+      });
+      wire();
+      return;
+    }
+    const me = Net.user && String(Net.user.name).toUpperCase();
+    const blocked = S.blocked.some((b) => b.name === p.name), reported = S.reported.includes(p.name);
+    body.innerHTML = `<div class="pl-card"><b class="pl-name">${esc(p.name)}</b>
+      ${p.name === me ? `<p class="note">${tl('That is you.')}</p>` : `
+      <div class="pl-act"><span><b>${blocked ? tl('BLOCKED') : tl('BLOCK')}</b><small>${blocked
+        ? tl('They can not send you friend requests, their quick chat never reaches you, and you never end up in the same match.')
+        : tl('No friend requests from them, none of their quick chat, and you never end up in the same match.')}</small></span>
+        <button class="mid-btn ${blocked ? '' : 'red'}" data-block>${blocked ? tl('UNBLOCK') : tl('BLOCK')}</button></div>
+      <div class="pl-act"><span><b>${tl('REPORT NAME')}</b><small>${tl('Is their username rude or weird? When enough different players report a name, that account is banned.')}</small></span>
+        <button class="mid-btn gold" data-report ${reported ? 'disabled' : ''}>${reported ? tl('REPORTED') : tl('REPORT')}</button></div>`}
+    </div>${backBtn}`;
+    wire();
+    const bl = body.querySelector('[data-block]');
+    if (bl) bl.addEventListener('click', () => { this.tap(); Net.sendSoon({ t: blocked ? 'friend.unblock' : 'friend.block', name: p.name }); });
+    const rep = body.querySelector('[data-report]');
+    if (rep) rep.addEventListener('click', async () => {
+      // two taps: REPORT, then TAP AGAIN
+      if (!rep.classList.contains('armed')) { this.tap(); rep.classList.add('armed'); rep.textContent = tl('TAP AGAIN'); return; }
+      this.tap();
+      rep.disabled = true; rep.textContent = tl('SENDING…');
+      const r = await Net.report(p.name);
+      if (r && r.auth === false) { rep.disabled = false; rep.classList.remove('armed'); rep.textContent = tl('REPORT'); this.toast(tl('LOG IN AGAIN TO REPORT')); return; }
+      if (r && r.ok && !S.reported.includes(p.name)) S.reported.push(p.name);
+      this.toast(I18N.upper(r && r.msg ? I18N.server(r.msg) : tl('THAT DID NOT WORK')));
+      if ($('modal').dataset.kind === 'player' && !$('modal').hidden) this.panel_player(body);
+    });
+  },
+
+  // ---- coins: packs bought with real money, in the app only (js/store.js does the buying) ----
+  panel_coins(body) {
+    $('modal-title').textContent = tl('GET COINS');
+    // the shop redraws itself when the store answers, but only while it is the thing on screen
+    Store.onChange = () => { if (!$('modal').hidden && $('modal').dataset.kind === 'coins') this.panel_coins($('modal-body')); };
+    const note = (t) => `<p class="note">${t}</p>`;
+    const st = Store.status;
+    let inner;
+    if (!Store.kind) inner = note(tl('Coin packs are sold in the Mini Strikers app, from the App Store or Google Play.'));
+    else if (!Net.token) inner = note(tl('Sign in to buy coins, so they follow your account to any device.')) + `<div class="coins-go"><button class="mid-btn" id="coins-signin">${tl('SIGN IN')}</button></div>`;
+    else if (Net.offline) inner = note(tl('Buying needs a connection. Come back when you are online.'));
+    else if (Store.sel) {
+      const p = PRODUCTS.find((x) => x.id === Store.sel);
+      inner = `<div class="gate">
+        <strong>${tl('ASK A GROWN-UP')}</strong>
+        <p class="gate-pack">${p.name} · <span class="coin"></span>${fmtCoins(p.coins)} · ${Store.priceOf(p)}</p>
+        <p>${tl('This costs real money. To go on, a grown-up types these numbers, with no spaces:')}</p>
+        <div class="gate-words">${Store.gate.words}</div>
+        <input id="gate-in" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="${tl('THE NUMBERS')}">
+        <p id="gate-msg" class="note"></p>
+        <div class="gate-btns"><button class="mid-btn" id="gate-no">${tl('CANCEL')}</button><button class="mid-btn green" id="gate-ok">${tl('CONTINUE')}</button></div>
+      </div>`;
+    } else {
+      const off = !!Store.busy || !st || !st.canBuy;
+      const packs = PRODUCTS.map((p) => `<button class="pack ${p.id === Store.busy ? 'busy' : ''}" data-pack="${p.id}" ${off ? 'disabled' : ''}>
+          <strong>${p.name}</strong>
+          <span class="pack-coins"><span class="coin"></span>${fmtCoins(p.coins)}</span>
+          <em class="pack-bonus">${p.bonus ? tl('+{0}% EXTRA', [p.bonus]) : '&nbsp;'}</em>
+          <span class="pack-price">${p.id === Store.busy ? tl('WAITING…') : Store.priceOf(p)}</span>
+        </button>`).join('');
+      inner = `${st && !st.canBuy && st.enabled ? note(tl('That is enough packs for today. Come back tomorrow.')) : ''}
+        <div class="pack-grid">${packs}</div>
+        ${Store.msg ? note(Store.msg) : ''}
+        <p class="note fine">${tl('These cost real money, so ask a grown-up first. Coins cannot be turned back into money. Crates cost coins, and every crate shows its odds on the crate shelf. Refunds are handled by Apple or Google.')}</p>`;
+    }
+    body.innerHTML = `${this.coinsLine()}${inner}`;
+
+    const signin = $('coins-signin'); if (signin) signin.addEventListener('click', () => { this.tap(); this.closeModal(); this.showAuth(); });
+    body.querySelectorAll('[data-pack]').forEach((b) => b.addEventListener('click', () => { this.tap(); Store.sel = b.dataset.pack; Store.newGate(); this.panel_coins(body); const f = $('gate-in'); if (f) f.focus(); }));
+    const no = $('gate-no'); if (no) no.addEventListener('click', () => { this.tap(); Store.sel = null; Store.gate = null; this.panel_coins(body); });
+    const ok = $('gate-ok');
+    if (ok) {
+      const go = () => {
+        if (Store.gatePassed($('gate-in').value)) { const id = Store.sel; Store.sel = null; Store.gate = null; this.panel_coins(body); Store.buy(id); return; }
+        Store.newGate(); this.panel_coins(body); $('gate-msg').textContent = tl('Not quite. Here are some new numbers.');
+      };
+      ok.addEventListener('click', () => { this.tap(); go(); });
+      $('gate-in').addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+    }
+  },
+
+  panel_crates(body) {
+    $('modal-title').textContent = tl('CRATES');
+    const cards = CRATES.map((c) => {
+      const odds = CRATE_RARITIES.filter((r) => (c.odds[r] || 0) > 0)
+        .map((r) => `<i style="--r:${RARITIES[r].color}"><b>${RARITIES[r].name}</b><em>${c.odds[r]}%</em></i>`).join('');
+      const left = Crates.left(c);
+      return `<button class="crate-card ${Save.data.coins < c.price ? 'poor' : ''} ${left ? '' : 'spent'}" data-crate="${c.id}" style="--c:${c.color}">
+        <canvas width="150" height="120" data-crateart="${c.id}"></canvas>
+        <strong>${c.name}</strong>
+        <span class="crate-odds">${odds}</span>
+        <span class="crate-left">${left ? tl('{0} LEFT INSIDE', [left]) : tl('EMPTY')}</span>
+        <span class="crate-price"><span class="coin"></span>${fmtCoins(c.price)}</span>
+      </button>`;
+    }).join('');
+    const left = Crates.anyMissing();
+    body.innerHTML = `<div class="crate-head">${this.coinsLine()}<span class="crate-btns">${Store.canShow() ? `<button class="mid-btn gold" id="to-coins">${tl('GET COINS')}</button>` : ''}<button class="mid-btn" id="to-collection">${tl('COLLECTION')}</button></span></div>
+      ${this.emoteShopHtml()}
+      <p class="note">${left ? tl('Every crate gives you something you have not got yet. The dearer the crate, the better the chances.') : tl('You own everything. There is nothing left in any crate.')}</p>
+      <div class="crate-grid">${cards}</div>`;
+    this.bindEmoteShop(body);
+    $('to-collection').addEventListener('click', () => { this.tap(); this.openModal('collection'); });
+    const toCoins = $('to-coins'); if (toCoins) toCoins.addEventListener('click', () => { this.tap(); this.openModal('coins'); });
+    body.querySelectorAll('canvas[data-crateart]').forEach((cv) => this.crateArt(cv, Crates.get(cv.dataset.crateart)));
+    body.querySelectorAll('.crate-card').forEach((el) => el.addEventListener('click', () => {
+      const crate = Crates.get(el.dataset.crate);
+      if (Save.data.coins < crate.price) {
+        Sound.steal(); el.classList.add('nope'); Pop.shake(el, 1.4);
+        setTimeout(() => el.classList.remove('nope'), 400);
+        return;
+      }
+      if (!Crates.left(crate)) { Sound.steal(); this.toast(tl('THAT CRATE IS EMPTY — TRY A BIGGER ONE')); return; }
+      this.tap();
+      // you can see what you paid: the coins come off the counter and go into the crate
+      const at = Pop.at(el);
+      Pop.spend(el, crate.price >= 100000 ? 18 : crate.price >= 20000 ? 12 : 8);
+      Pop.ring(at.x, at.y, crate.color, 190, 420);
+      Pop.shake(el, 0.8);
+      this.openCrate(body, crate);
+    }));
+  },
+
+  // A crate, drawn. Four builds up the ladder — a nailed wooden crate, a banded treasure chest, a
+  // sealed case and a vault — each in its own colours, with the lid lifted just enough to show
+  // there is something in there.
+  crateArt(cv, crate) {
+    const g = cv.getContext('2d'), W = cv.width, H = cv.height;
+    g.clearRect(0, 0, W, H);
+    const build = crate.build || 'wood';
+    const base = crate.color, metal = crate.metal || '#c8a24a', gem = crate.gem || '#ffffff';
+    const dark = shadeHex(base, -0.3), darker = shadeHex(base, -0.5), light = shadeHex(base, 0.2);
+    const ink = OUTLINE;
+    g.lineJoin = 'round'; g.lineCap = 'round'; g.strokeStyle = ink;
+    const u = W / 150;                       // everything is drawn against a 150-wide crate
+    const lw = 3.4 * u;
+    const cx = W / 2, floor = H * 0.9;
+    const bw = W * 0.66, bh = H * 0.42, bx = cx - bw / 2, by = floor - bh;
+    const lidH = H * 0.2, lidY = by - lidH * 0.72;
+    const fill = (col) => { g.fillStyle = col; g.fill(); g.lineWidth = lw; g.stroke(); };
+    const box = (x, y, w, h, r, col) => { Sprites.rr(g, x, y, w, h, r); fill(col); };
+    const rivet = (x, y, r2, col) => { g.beginPath(); g.arc(x, y, r2, 0, Math.PI * 2); g.fillStyle = col; g.fill(); g.lineWidth = 1.6 * u; g.stroke(); };
+
+    // the shadow it stands in
+    g.fillStyle = 'rgba(22, 26, 51, 0.22)';
+    g.beginPath(); g.ellipse(cx, floor + 3 * u, bw * 0.56, 5.5 * u, 0, 0, Math.PI * 2); g.fill();
+
+    // what is inside, showing through the gap under the lid
+    g.fillStyle = gem;
+    g.beginPath(); g.moveTo(bx + 4 * u, by + 2 * u); g.lineTo(bx + bw - 4 * u, by + 2 * u); g.lineTo(bx + bw - 10 * u, by - 7 * u); g.lineTo(bx + 10 * u, by - 7 * u); g.closePath(); g.fill();
+    for (let i = 0; i < 3; i++) {
+      const sx = bx + bw * (0.3 + i * 0.2), sy = by - 4 * u - (i % 2) * 3 * u;
+      Sprites.star ? Sprites.star(g, sx, sy, 3.4 * u, '#ffffff') : 0;
+    }
+
+    // ---- the body
+    box(bx, by, bw, bh, build === 'tech' ? 5 * u : 3 * u, base);
+    // its shaded right-hand side
+    g.beginPath(); g.moveTo(bx + bw * 0.74, by); g.lineTo(bx + bw, by + 3 * u); g.lineTo(bx + bw, by + bh - 3 * u); g.lineTo(bx + bw * 0.74, bh + by); g.closePath();
+    g.fillStyle = dark; g.fill();
+
+    if (build === 'wood') {
+      // planks across the front, and a nail in each corner
+      g.strokeStyle = darker; g.lineWidth = 2 * u;
+      for (let i = 1; i < 3; i++) { const y = by + (bh / 3) * i; g.beginPath(); g.moveTo(bx + 2 * u, y); g.lineTo(bx + bw - 2 * u, y); g.stroke(); }
+      g.strokeStyle = ink;
+      // the diagonal brace
+      g.lineWidth = 3 * u; g.strokeStyle = shadeHex(base, -0.18);
+      g.beginPath(); g.moveTo(bx + 5 * u, by + bh - 5 * u); g.lineTo(bx + bw - 5 * u, by + 5 * u); g.stroke();
+      g.strokeStyle = ink;
+      for (const [rx, ry] of [[bx + 6 * u, by + 6 * u], [bx + bw - 6 * u, by + 6 * u], [bx + 6 * u, by + bh - 6 * u], [bx + bw - 6 * u, by + bh - 6 * u]]) rivet(rx, ry, 2.4 * u, metal);
+    } else if (build === 'chest') {
+      // two bands round the body with studs on them
+      for (const fx of [0.22, 0.78]) {
+        g.fillStyle = metal; g.fillRect(bx + bw * fx - 4 * u, by, 8 * u, bh);
+        g.lineWidth = 2.2 * u; g.strokeRect(bx + bw * fx - 4 * u, by, 8 * u, bh);
+        for (let i = 0; i < 3; i++) rivet(bx + bw * fx, by + bh * (0.2 + i * 0.3), 1.8 * u, shadeHex(metal, 0.3));
+      }
+    } else if (build === 'tech') {
+      // vents and a little readout
+      box(bx + 6 * u, by + 5 * u, bw * 0.4, bh * 0.42, 2.5 * u, '#12162c');
+      g.fillStyle = gem;
+      for (let i = 0; i < 4; i++) g.fillRect(bx + 10 * u + i * 5 * u, by + 9 * u + ((i * 5) % 7) * u, 3 * u, bh * 0.2 - ((i * 5) % 7) * u);
+      g.fillStyle = darker;
+      for (let i = 0; i < 3; i++) { Sprites.rr(g, bx + bw * 0.56, by + 6 * u + i * 7 * u, bw * 0.34, 3.4 * u, 1.7 * u); g.fill(); }
+      g.strokeStyle = metal; g.lineWidth = 2.4 * u;
+      g.beginPath(); g.moveTo(bx + 4 * u, by + bh * 0.62); g.lineTo(bx + bw - 4 * u, by + bh * 0.62); g.stroke();
+      g.strokeStyle = ink;
+    } else {
+      // a vault: a thick rim, a wheel, and gems in the corners
+      box(bx + 5 * u, by + 4 * u, bw - 10 * u, bh - 8 * u, 3 * u, dark);
+      g.beginPath(); g.arc(cx, by + bh * 0.52, bh * 0.26, 0, Math.PI * 2); fill(metal);
+      g.strokeStyle = ink; g.lineWidth = 2.4 * u;
+      for (let i = 0; i < 4; i++) {
+        const a = i * Math.PI / 4 + 0.4;
+        g.beginPath(); g.moveTo(cx - Math.cos(a) * bh * 0.3, by + bh * 0.52 - Math.sin(a) * bh * 0.3);
+        g.lineTo(cx + Math.cos(a) * bh * 0.3, by + bh * 0.52 + Math.sin(a) * bh * 0.3); g.stroke();
+      }
+      g.beginPath(); g.arc(cx, by + bh * 0.52, bh * 0.1, 0, Math.PI * 2); fill(shadeHex(metal, 0.35));
+      for (const [gx, gy] of [[bx + 9 * u, by + 9 * u], [bx + bw - 9 * u, by + 9 * u], [bx + 9 * u, by + bh - 9 * u], [bx + bw - 9 * u, by + bh - 9 * u]]) {
+        g.beginPath(); g.moveTo(gx, gy - 4 * u); g.lineTo(gx + 3.4 * u, gy); g.lineTo(gx, gy + 4 * u); g.lineTo(gx - 3.4 * u, gy); g.closePath(); fill(gem);
+      }
+    }
+
+    // ---- the lid, tipped back a little
+    const lw2 = bw + 6 * u, lx = cx - lw2 / 2;
+    if (build === 'chest' || build === 'vault') {
+      // a curved lid
+      g.beginPath();
+      g.moveTo(lx, by - 2 * u);
+      g.quadraticCurveTo(cx, lidY - lidH * 0.5, lx + lw2, by - 2 * u);
+      g.lineTo(lx + lw2, by + 2 * u); g.lineTo(lx, by + 2 * u); g.closePath();
+      fill(light);
+      g.beginPath();
+      g.moveTo(cx - lw2 * 0.16, by - 2 * u);
+      g.quadraticCurveTo(cx, lidY - lidH * 0.42, cx + lw2 * 0.16, by - 2 * u);
+      g.closePath(); g.fillStyle = metal; g.fill(); g.lineWidth = 2.2 * u; g.stroke();
+    } else {
+      // a flat lid with a rim
+      g.beginPath();
+      g.moveTo(lx, by + 2 * u); g.lineTo(lx + 8 * u, lidY); g.lineTo(lx + lw2 - 8 * u, lidY); g.lineTo(lx + lw2, by + 2 * u);
+      g.closePath(); fill(light);
+      g.fillStyle = dark; g.fillRect(lx + 2 * u, by - 1 * u, lw2 - 4 * u, 4 * u);
+      g.lineWidth = 2 * u; g.strokeRect(lx + 2 * u, by - 1 * u, lw2 - 4 * u, 4 * u);
+    }
+
+    // ---- the lock, right at the front
+    const kx = cx, ky = by + bh * (build === 'tech' ? 0.84 : build === 'chest' ? 0.55 : 0.46);
+    if (build === 'tech') {
+      // a latch instead of a padlock: a bar with a light on it
+      box(kx - 15 * u, ky - 5 * u, 30 * u, 10 * u, 3 * u, metal);
+      rivet(kx - 9 * u, ky, 2 * u, gem);
+      g.fillStyle = ink; g.fillRect(kx - 2 * u, ky - 2.4 * u, 12 * u, 2 * u); g.fillRect(kx - 2 * u, ky + 0.6 * u, 8 * u, 2 * u);
+    } else if (build !== 'vault') {
+      box(kx - 9 * u, ky - 8 * u, 18 * u, 16 * u, 3 * u, metal);
+      g.fillStyle = ink;
+      g.beginPath(); g.arc(kx, ky - 1.5 * u, 2.8 * u, 0, Math.PI * 2); g.fill();
+      g.beginPath(); g.moveTo(kx - 2.2 * u, ky + 5 * u); g.lineTo(kx + 2.2 * u, ky + 5 * u); g.lineTo(kx + 1.1 * u, ky - 0.5 * u); g.lineTo(kx - 1.1 * u, ky - 0.5 * u); g.closePath(); g.fill();
+      g.fillStyle = shadeHex(metal, 0.35); g.fillRect(kx - 6 * u, ky - 6 * u, 3 * u, 3 * u);
+    }
+
+    // ---- a crown for the top of the ladder, sparks for the rest
+    if (build === 'vault') {
+      const cyy = lidY - lidH * 0.26;
+      g.beginPath();
+      g.moveTo(cx - 13 * u, cyy + 6 * u); g.lineTo(cx - 15 * u, cyy - 7 * u); g.lineTo(cx - 6 * u, cyy - 1 * u);
+      g.lineTo(cx, cyy - 11 * u); g.lineTo(cx + 6 * u, cyy - 1 * u); g.lineTo(cx + 15 * u, cyy - 7 * u); g.lineTo(cx + 13 * u, cyy + 6 * u);
+      g.closePath(); fill(metal);
+      for (const dx of [-7, 0, 7]) rivet(cx + dx * u, cyy + 1 * u, 2 * u, gem);
+    }
+    g.fillStyle = gem;
+    for (const [sx, sy, s] of [[bx - 7 * u, by - 4 * u, 3.4], [bx + bw + 7 * u, by + 6 * u, 2.6], [bx + bw + 4 * u, by - 10 * u, 2]]) {
+      g.beginPath();
+      g.moveTo(sx, sy - s * u); g.lineTo(sx + s * 0.42 * u, sy); g.lineTo(sx, sy + s * u); g.lineTo(sx - s * 0.42 * u, sy);
+      g.closePath(); g.fill();
+    }
+  },
+
+  // Opening one: a reel of things it could hand over, running down to the one it does.
+  openCrate(body, crate) {
+    const win = Crates.open(crate.id);
+    if (!win || win.poor || win.empty) { this.toast(win && win.empty ? tl('THAT CRATE CAME UP EMPTY — NOTHING SPENT') : tl('NOT ENOUGH COINS')); this.panel_crates(body); return; }
+    const { cells, at } = Crates.reel(crate, win);
+    const cell = (c, i) => `<span class="reel-cell rar-${Crates.rarity(c.kind, c.id)}" style="--r:${RARITIES[Crates.rarity(c.kind, c.id)].color}">
+      <canvas width="120" height="120" data-cell="${i}"></canvas><b>${Crates.name(c.kind, c.id)}</b></span>`;
+    body.innerHTML = `<div class="crate-open">
+      <h3 style="--c:${crate.color}">${crate.name}</h3>
+      <div class="reel-window"><div class="reel" id="crate-reel">${cells.map(cell).join('')}</div><span class="reel-mark"></span></div>
+      <div class="crate-result" id="crate-result" hidden></div>
+      <div class="crate-buttons" id="crate-buttons" hidden>
+        <button class="big-btn" id="crate-back">${tl('BACK')}</button>
+        <button class="big-btn green" id="crate-again">${tl('OPEN ANOTHER')}</button>
+      </div>
+    </div>`;
+    // every cell draws whatever it is holding
+    body.querySelectorAll('canvas[data-cell]').forEach((cv) => this.itemSwatch(cv, cells[+cv.dataset.cell]));
+    const reel = $('crate-reel');
+    const first = reel.querySelector('.reel-cell');
+    const cellW = (first ? first.getBoundingClientRect().width : 100) + 8; // card + the gap beside it
+    const win0 = reel.parentElement.getBoundingClientRect().width;
+    const land = win0 / 2 - (at * cellW + cellW / 2) + (Math.random() * 40 - 20);
+    reel.style.transition = 'none';
+    reel.style.transform = 'translateX(' + (win0 / 2 - cellW / 2) + 'px)';
+    void reel.offsetWidth;
+    reel.style.transition = 'transform 4.4s cubic-bezier(.08,.72,.16,1)';
+    reel.style.transform = 'translateX(' + land + 'px)';
+    Sound.tap();
+    clearTimeout(this._crateT);
+    this._crateT = setTimeout(() => {
+      if (!$('crate-result')) return;
+      const rar = Crates.rarity(win.kind, win.id);
+      const kindName = { character: tl('PLAYER'), ball: tl('BALL'), trail: tl('POWER TRAIL'), celebration: tl('CELEBRATION'), accessory: tl('ACCESSORY'), skill: tl('SKILL MOVE'), emote: tl('EMOTE') }[win.kind] || tl('ITEM');
+      $('crate-result').innerHTML = `<span class="got" style="--r:${RARITIES[rar].color}">${RARITIES[rar].name}</span>
+        <b>${Crates.name(win.kind, win.id)}</b><em>${tl('{0} · NEW', [kindName])}</em>`;
+      $('crate-result').hidden = false;
+      $('crate-result').classList.remove('landed'); void $('crate-result').offsetWidth;
+      $('crate-buttons').hidden = false;
+      $('crate-again').textContent = Save.data.coins >= crate.price ? tl('OPEN ANOTHER') : tl('NOT ENOUGH COINS');
+      $('crate-again').classList.toggle('off', Save.data.coins < crate.price);
+      Sound.powerReady();
+      // the fuss is made over the card itself, and scaled to what came out of the crate
+      Pop.prize($('crate-result'), rar);
+      if (rar === 'legendary' || rar === 'mythic') {
+        Sound.cheer(true);
+        // No floating word for the grade: the card already says it, and there is nowhere to put
+        // one that is not on top of the reel or the name. The card makes the entrance instead.
+        $('crate-result').classList.add('landed');
+      }
+      $('crate-back').addEventListener('click', () => { this.tap(); this.panel_crates(body); });
+      $('crate-again').addEventListener('click', () => {
+        if (Save.data.coins < crate.price) { Sound.steal(); return; }
+        this.tap(); this.openCrate(body, crate);
+      });
+      this.refreshHome();
+    }, 4500);
+  },
+
+  // An accessory card: a portrait for anything worn on the head or face, and the whole player for
+  // anything worn anywhere else — a cape or a pair of boots is not in a portrait.
+  accSwatch(cv, id) {
+    const def = id === 'none' ? null : accessoryDef(id);
+    // the card shows that one thing on its own, whatever else you are wearing
+    const look = { ...lookFromCustom(Save.data.look, []), acc: id === 'none' ? null : id, accs: id === 'none' ? [] : [id] };
+    if (!def || def.slot === 'face') { this.portrait(cv, look); return; }
+    if (def.slot === 'head') { this.portrait(cv, look, 'blue', false, 10, 0.16); return; }
+    const g = cv.getContext('2d'), w = cv.width, h = cv.height;
+    g.clearRect(0, 0, w, h);
+    g.fillStyle = TEAMS.blue.board;
+    g.beginPath(); g.arc(w / 2, h / 2, w / 2 - 3, 0, Math.PI * 2); g.fill();
+    g.save();
+    g.beginPath(); g.arc(w / 2, h / 2, w / 2 - 3, 0, Math.PI * 2); g.clip();
+    const p2 = this.fakePlayer(look);
+    if (def.slot === 'back') { p2.fy = -1; p2.faceX = 0.001; } // turn round so the back shows
+    p2.vx = 0; p2.vy = 0;
+    Sprites.player(g, p2, w / 2, h * 0.94, w / 86, 0.4);
+    g.restore();
+    g.lineWidth = 3; g.strokeStyle = OUTLINE;
+    g.beginPath(); g.arc(w / 2, h / 2, w / 2 - 3, 0, Math.PI * 2); g.stroke();
+  },
+
+  // one small picture of any item, whatever kind it is
+  itemSwatch(cv, item) {
+    if (item.kind === 'emote') this.emoteSwatch(cv, item.id);
+    else if (item.kind === 'accessory') this.accSwatch(cv, item.id);
+    else if (item.kind === 'ball') this.ballSwatch(cv, item.id);
+    else if (item.kind === 'trail') this.trailSwatch(cv, item.id);
+    else this.celebSwatch(cv, item.id, 1.2);
+  },
+
+  // ---- customize: your player on the left, everything you can put on them on the right ----
+  CUST_TABS: [['character', tl('PLAYER')], ['skill', tl('SKILL MOVE')], ['ball', tl('BALL')], ['accessory', tl('ACCESSORIES')], ['celebration', tl('CELEBRATION')], ['trail', tl('POWER TRAIL')], ['emote', tl('EMOTES')]],
+  CUST_NOTES: {
+    character: tl('Your own player: the haircut, the colours and the build. The kit is your team\'s. To make them better, spend coins on STATS.'),
+    skill: tl('What your SKILL button does. Carry one and it is that move every time, aimed wherever you are pointing.'),
+    ball: tl('The match ball in every game you play.'),
+    accessory: tl('Wear as many as you like, all at once: tap one to put it on, tap it again to take it off. Online, everyone sees them.'),
+    celebration: tl('Score and the camera zooms in on you doing this. Everyone in the match sees it.'),
+    trail: tl('Shown on power shots. Fill the meter around SHOOT, then fully charge.'),
+    emote: tl('Pick up to 8 for your match menu: in a match, open the quick chat and tap one, and everyone in the match sees it. More come out of crates and the daily emote shop.'),
+  },
+
+  panel_customize(body) {
+    $('modal-title').textContent = tl('CUSTOMIZE');
+    const tab = this.CUST_TABS.some(([id]) => id === this._custTab) ? this._custTab : 'character';
+    this._custTab = tab;
+    let grid = '', gridClass = '';
+    if (tab === 'character') {
+      gridClass = 'look-grid';
+      grid = this.lookEditor();
+    } else if (tab === 'trail') {
+      grid = TRAILS.map((t) => `<button class="trail-opt ${t.id === Save.trail().id ? 'sel' : ''} ${Shop.owns('trail', t.id) ? '' : 'locked'}" data-id="${t.id}">
+        <canvas width="200" height="70" data-trail="${t.id}"></canvas><strong>${t.name}</strong>${this.priceTag('trail', t.id)}</button>`).join('');
+    } else if (tab === 'celebration') {
+      gridClass = 'celeb-grid';
+      const seasonCelebs = Pass.owned('celebration').map((id) => PassGen.celeb(passNumOf(id, 'celebration')));
+      grid = [...seasonCelebs, ...CELEBRATIONS].map((c) => `<button class="trail-opt celeb-opt ${c.id === Save.celebration() ? 'sel' : ''} ${Shop.owns('celebration', c.id) ? '' : 'locked'}" data-id="${c.id}">
+        <canvas width="160" height="150" data-celeb="${c.id}"></canvas><strong>${c.name}</strong>${c.season ? this.seasonTag() : this.priceTag('celebration', c.id)}</button>`).join('');
+    } else if (tab === 'skill') {
+      gridClass = 'skill-grid';
+      grid = SKILLS.map((k) => `<button class="trail-opt skill-opt ${k.id === Save.skill() ? 'sel' : ''} ${Shop.owns('skill', k.id) ? '' : 'locked'}" data-id="${k.id}">
+        <canvas width="150" height="92" data-skillart="${k.id}"></canvas><strong>${k.name}</strong>
+        <small class="skill-blurb">${k.blurb}</small>${this.priceTag('skill', k.id)}</button>`).join('');
+    } else if (tab === 'emote') {
+      // your eight for the match menu: tap one to put it in or take it out
+      gridClass = 'emote-grid';
+      const deck = Emotes.deck();
+      const order = ['starter', ...EMOTE_GRADES];
+      const list = [...Pass.owned('emote').map((id) => Emotes.get(id)), ...EMOTES.slice().sort((a, b) => (Emotes.owns(b.id) - Emotes.owns(a.id)) || (order.indexOf(a.rarity) - order.indexOf(b.rarity)))];
+      grid = `<div class="emote-count">${tl('IN YOUR MATCH MENU: {0} / {1}', [deck.length, EMOTE_DECK_MAX])}</div>` + list.map((e) => `<button class="trail-opt emote-opt ${deck.includes(e.id) ? 'sel' : ''} ${Emotes.owns(e.id) ? '' : 'locked'}" data-id="${e.id}" aria-pressed="${deck.includes(e.id)}" style="--r:${RARITIES[e.rarity].color}">
+        <canvas width="120" height="120" data-emote="${e.id}"></canvas><strong>${e.name}</strong>${Emotes.owns(e.id) ? `<span class="em-grade" style="--r:${RARITIES[e.rarity].color}">${RARITIES[e.rarity].name}</span>` : this.priceTag('emote', e.id)}</button>`).join('');
+    } else if (tab === 'accessory') {
+      // as many as you like: each card is on or off
+      const on = new Set(Save.accessories());
+      const seasonAccs = Pass.owned('accessory').map((id) => accessoryDef(id));
+      grid = [{ id: 'none', name: on.size ? tl('Take them all off') : tl('Nothing on') }, ...seasonAccs, ...ACCESSORIES].map((a) => `<button class="trail-opt acc-opt ${(a.id === 'none' ? !on.size : on.has(a.id)) ? 'sel' : ''} ${a.id === 'none' || Shop.owns('accessory', a.id) ? '' : 'locked'}" data-id="${a.id}" aria-pressed="${a.id !== 'none' && on.has(a.id)}">
+        <canvas width="120" height="120" data-acc="${a.id}"></canvas><strong>${a.name}</strong>${a.id === 'none' ? '' : a.season ? this.seasonTag() : this.priceTag('accessory', a.id)}</button>`).join('');
+    } else {
+      grid = BALLS.map((b) => `<button class="trail-opt ${b.id === Save.ball().id ? 'sel' : ''} ${Shop.owns('ball', b.id) ? '' : 'locked'}" data-id="${b.id}">
+        <canvas width="200" height="90" data-ball="${b.id}"></canvas><strong>${b.name}</strong>${this.priceTag('ball', b.id)}</button>`).join('');
+    }
+    const ground = typeof stadiumFor === 'function' ? stadiumFor(Clubs.mine()) : Save.stadium();
+    body.innerHTML = `<div class="cust">
+      <div class="cust-left">
+        <canvas id="cust-view" class="cust-view"></canvas>
+        <div class="cust-ground"><canvas id="cust-ground" width="200" height="90"></canvas><b>${tl('HOME · {0}', [ground.name])}</b></div>
+      </div>
+      <div class="cust-side">
+        <div class="cust-top">${this.coinsLine()}<div class="tabs">${this.CUST_TABS.map(([id, label]) => `<button data-tab="${id}" class="${id === tab ? 'sel' : ''}">${label}</button>`).join('')}</div></div>
+        <p class="note">${this.CUST_NOTES[tab]}</p>
+        <div class="trail-grid ${gridClass}">${grid}</div>
+      </div>
+    </div>`;
+    this.fitWords(body);
+    body.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => { this.tap(); this._custTab = b.dataset.tab; this.panel_customize(body); }));
+    body.querySelectorAll('canvas[data-trail]').forEach((cv) => this.trailSwatch(cv, cv.dataset.trail));
+    body.querySelectorAll('canvas[data-ball]').forEach((cv) => this.ballSwatch(cv, cv.dataset.ball));
+    body.querySelectorAll('canvas[data-acc]').forEach((cv) => this.accSwatch(cv, cv.dataset.acc));
+    body.querySelectorAll('canvas[data-skillart]').forEach((cv) => this.skillSwatch(cv, cv.dataset.skillart));
+    if (tab === 'celebration') this.animateCelebs(body);
+    if (tab === 'emote') this.animateEmotes(body);
+    if (tab === 'character') this.bindLookEditor(body);
+    const groundCv = $('cust-ground');
+    if (groundCv) { const g = groundCv.getContext('2d'); g.drawImage(Render.stadiumThumb(ground), 0, 0, groundCv.width, groundCv.height); }
+    body.querySelectorAll('.trail-opt').forEach((el) => this.shopCard(el, tab, el.dataset.id, () => {
+      if (tab === 'emote' && Emotes.toggle(el.dataset.id) === 'full') {
+        Sound.steal(); el.classList.add('nope'); setTimeout(() => el.classList.remove('nope'), 400);
+        this.toast(tl('Your match menu holds 8 emotes. Take one out first.'));
+        return;
+      }
+      if (tab === 'trail') Save.data.trail = el.dataset.id;
+      if (tab === 'celebration') Save.data.celebration = el.dataset.id;
+      if (tab === 'skill') Save.data.skill = el.dataset.id;
+      if (tab === 'ball') Save.data.ball = el.dataset.id;
+      if (tab === 'accessory') {
+        if (el.dataset.id === 'none') { Save.data.accessories = []; Save.data.accessory = null; }
+        else Save.toggleAccessory(el.dataset.id);
+      }
+      Save.write();
+      // a small nod that it took
+      const card = el.getBoundingClientRect ? el : null;
+      if (card) { const at = Pop.at(card); Pop.ring(at.x, at.y, '#ffffff', 140, 360); Pop.confetti(at.x, at.y, ['#ffffff', '#ffc21a'], 10, 0.6); }
+      this.redraw(body, () => this.panel_customize(body));
+      this.refreshHome();
+    }));
+    this.custStage();
+  },
+
+  // The player on the left plays a little loop: stands there, strikes the ball away with your
+  // trail behind it, then does your celebration. Everything equipped, all at once.
+  custStage() {
+    const cv = $('cust-view');
+    if (!cv) return;
+    if (this._stage) this._stage.dead = true;
+    const state = this._stage = { dead: false, d: 1 };
+    this._stageT0 = this._stageT0 || performance.now();
+    const fit = () => {
+      const r = cv.getBoundingClientRect();
+      state.d = Math.min(2, window.devicePixelRatio || 1);
+      cv.width = Math.max(60, Math.round(r.width * state.d));
+      cv.height = Math.max(60, Math.round(r.height * state.d));
+    };
+    fit();
+    let last = 0;
+    const frame = (now) => {
+      if (state.dead || $('modal').hidden || !cv.isConnected) return;
+      requestAnimationFrame(frame);
+      if (now - last < 33) return;
+      last = now;
+      const r = cv.getBoundingClientRect();
+      if (Math.abs(r.width * state.d - cv.width) > 2 || Math.abs(r.height * state.d - cv.height) > 2) fit();
+      this.drawStage(cv, (now - this._stageT0) / 1000);
+    };
+    requestAnimationFrame(frame);
+  },
+
+  STAGE_SKILL: 1.15,
+  STAGE_IDLE: 1.5, STAGE_KICK: 0.22, STAGE_FLY: 0.95,
+  drawStage(cv, t) {
+    const g = cv.getContext('2d'), W = cv.width, H = cv.height;
+    const st = Save.stadium();
+    // the home ground's own grass, mown in bands
+    const bands = 7;
+    for (let i = 0; i < bands; i++) { g.fillStyle = st.grass[i % 2][0]; g.fillRect(0, (H / bands) * i, W, H / bands + 1); }
+    g.fillStyle = 'rgba(0,0,0,0.12)'; g.fillRect(0, 0, W, H * 0.1);
+    const k = Math.min(H / 108, W / 72);
+    const ground = H * 0.84, px = W * 0.4;
+    // the move comes first, then the shot, then the celebration
+    const sk = skillDef(Save.skill());
+    const skillShow = sk.read ? 0 : this.STAGE_SKILL;
+    const move = this.STAGE_IDLE, kick = move + skillShow, fly = kick + this.STAGE_KICK, cele = fly + this.STAGE_FLY;
+    const cycle = cele + CELE_TIME + 0.4;
+    const e = t % cycle;
+    const inMove = skillShow && e >= move && e < kick;
+    const mu = inMove ? (e - move) / skillShow : 0;   // 0 to 1 through the move
+    const p = this.fakePlayer(Save.look());
+    p.faceX = 1; p.fx = 1; p.fy = 0.22; p.vx = 0; p.vy = 0; p.runPhase = 0;
+    p.kickT = 0; p.celebrateT = 0; p.celebKind = null;
+    if (inMove) {
+      // what the move does to the player, read off the same numbers the match uses
+      const self = sk.self || {};
+      if (self.hop) p.hopT = Math.sin(mu * Math.PI) * 0.4;
+      if (self.spin) { p.fx = Math.cos(mu * Math.PI * 2 * self.spin); p.fy = 0.22; p.faceX = p.fx >= 0 ? 1 : -1; }
+      else if (self.turn === 'reverse') { const back = mu > 0.45; p.fx = back ? -1 : 1; p.faceX = back ? -1 : 1; }
+      if (self.burst || self.dash) p.runPhase = mu * 14;
+      p.vx = (self.burst || 0) * 40 * Math.sin(mu * Math.PI);
+    }
+    if (e > kick && e < fly + 0.1) { p.kickT = Math.max(0, this.STAGE_KICK - (e - kick)); p.kickDur = this.STAGE_KICK; }
+    if (e > cele) { p.celebrateT = Math.max(0, CELE_TIME - (e - cele)); p.celebKind = Save.celebration(); }
+    // the ball: at his feet, then away to the right with the trail behind it
+    const ballR = 3.1 * k;
+    let bx = px + 13 * k, by = ground - ballR * 0.9, pts = null;
+    if (e > fly) {
+      const u = Math.min(1, (e - fly) / this.STAGE_FLY);
+      bx = px + 13 * k + u * (W - px - 10 * k);
+      by = ground - ballR * 0.9 - Math.sin(u * Math.PI) * H * 0.22;
+      pts = [];
+      for (let i = 1; i <= 11; i++) {
+        const uu = Math.max(0, u - i * 0.035);
+        pts.push({ x: px + 13 * k + uu * (W - px - 10 * k), y: ground - ballR * 0.9 - Math.sin(uu * Math.PI) * H * 0.22, z: -CFG.BALL_R });
+      }
+    }
+    if (e > cele) { bx = -999; }
+    // shadows first
+    g.fillStyle = 'rgba(20, 60, 20, 0.3)';
+    g.beginPath(); g.ellipse(px, ground + 2, 15 * k, 5.5 * k, 0, 0, Math.PI * 2); g.fill();
+    if (bx > 0) { g.beginPath(); g.ellipse(bx, ground + 2, ballR * 1.1, ballR * 0.4, 0, 0, Math.PI * 2); g.fill(); }
+    // the power trail off the shot, then the ball
+    const prev = Game.headless; Game.headless = true;
+    if (pts) {
+      const R = { S: k * 0.9, sx: (x) => x, sy: (y) => y };
+      Sprites.trail(g, { trailType: Save.trail().id, trail: pts, x: bx, y: by, z: -CFG.BALL_R }, R, t);
+    }
+    const pose = p.celebrateT > 0 && CELE_POSES[p.celebKind] ? CELE_POSES[p.celebKind](CELE_TIME - p.celebrateT, t, p) : null;
+    if (pose && CELE_MOVES[p.celebKind]) p.vx = CELE_MOVES[p.celebKind](CELE_TIME - p.celebrateT);
+    if (inMove) this.drawSkillShow(g, sk, px, ground, k, mu, W, H, 'behind');
+    Sprites.player(g, p, px, ground, k, t);
+    if (bx > 0) Sprites.ball(g, { x: 0, y: 0, z: 0, vx: 1, vy: 0, roll: t * 5, shot: null, owner: null, skin: Save.ball() }, bx, by, k * 1.1, t);
+    if (inMove) this.drawSkillShow(g, sk, px, ground, k, mu, W, H, 'front');
+    Game.headless = prev;
+  },
+
+  // A move's picture, drawn from what the move actually does: its colour, and the shape of what
+  // it throws out. CLASSIC gets the four little arrows of the old read-the-stick skills.
+  skillSwatch(cv, id) {
+    const g = cv.getContext('2d');
+    const W = cv.width, H = cv.height;
+    const def = skillDef(id);
+    const col = def.color || '#8a90b8';
+    g.clearRect(0, 0, W, H);
+    // the pitch it happens on
+    g.fillStyle = '#3fae5f'; g.fillRect(0, 0, W, H);
+    g.fillStyle = 'rgba(255,255,255,0.05)';
+    for (let i = 0; i < 4; i++) g.fillRect((W / 4) * i, 0, W / 8, H);
+    const cx = W / 2, cy = H / 2 + 4;
+    g.lineJoin = 'round'; g.lineCap = 'round';
+
+    if (def.read) {
+      // classic: a stick pointing four ways
+      g.strokeStyle = OUTLINE; g.lineWidth = 7;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { g.beginPath(); g.moveTo(cx + dx * 8, cy + dy * 8); g.lineTo(cx + dx * 24, cy + dy * 24); g.stroke(); }
+      g.strokeStyle = '#ffffff'; g.lineWidth = 4;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { g.beginPath(); g.moveTo(cx + dx * 8, cy + dy * 8); g.lineTo(cx + dx * 24, cy + dy * 24); g.stroke(); }
+    } else {
+      const fx = def.fx || {};
+      if (fx.kind === 'sparks') {
+        for (let i = 0; i < 9; i++) {
+          const a = (i / 9) * Math.PI * 2, r0 = 10, r1 = 26 + (i % 3) * 5;
+          g.strokeStyle = OUTLINE; g.lineWidth = 7;
+          g.beginPath(); g.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0); g.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1); g.stroke();
+          g.strokeStyle = col; g.lineWidth = 4;
+          g.beginPath(); g.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0); g.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1); g.stroke();
+        }
+      } else if (fx.kind === 'stars') {
+        for (const [ox, oy, sc] of [[-20, -8, 1], [0, -16, 1.35], [20, -6, 1], [-10, 10, 0.8], [13, 12, 0.9]]) this.star(g, cx + ox, cy + oy, 9 * sc, col);
+      } else if (fx.kind === 'burst') {
+        g.beginPath(); g.arc(cx, cy, 24, 0, Math.PI * 2); g.fillStyle = OUTLINE; g.fill();
+        g.beginPath(); g.arc(cx, cy, 20, 0, Math.PI * 2); g.fillStyle = col; g.fill();
+        g.beginPath(); g.arc(cx - 5, cy - 5, 8, 0, Math.PI * 2); g.fillStyle = 'rgba(255,255,255,0.5)'; g.fill();
+      } else {
+        // rings, which most of them are
+        for (const [r, w] of [[27, 8], [17, 6]]) { g.strokeStyle = OUTLINE; g.lineWidth = w + 3; g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.stroke(); g.strokeStyle = col; g.lineWidth = w; g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.stroke(); }
+      }
+      // the ball it all happens around
+      g.beginPath(); g.arc(cx, cy, 7, 0, Math.PI * 2); g.fillStyle = '#ffffff'; g.fill();
+      g.lineWidth = 2.5; g.strokeStyle = OUTLINE; g.stroke();
+    }
+    // the grade, as a band along the bottom
+    const rar = RARITIES[def.rarity] || RARITIES.common;
+    g.fillStyle = OUTLINE; g.fillRect(0, H - 14, W, 14);
+    g.fillStyle = rar.color; g.fillRect(0, H - 12, W, 10);
+  },
+
+  star(g, x, y, r, color) {
+    g.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * Math.PI * 2 - Math.PI / 2, rr = i % 2 ? r * 0.45 : r;
+      const px = x + Math.cos(a) * rr, py = y + Math.sin(a) * rr;
+      i ? g.lineTo(px, py) : g.moveTo(px, py);
+    }
+    g.closePath();
+    g.fillStyle = color; g.fill();
+    g.lineWidth = 2.5; g.strokeStyle = OUTLINE; g.stroke();
+  },
+
+  // What a signature move looks like on the customize stage. Behind the player: the ring or
+  // shockwave it throws out. In front: the sparks, the stars, and its name.
+  drawSkillShow(g, def, px, ground, k, u, W, H, layer) {
+    const fx = def.fx || {};
+    const col = def.color || '#ffffff';
+    const cy = ground - 26 * k;
+    const ease = u < 0.5 ? u * 2 : 1 - (u - 0.5) * 2;   // in and back out
+    g.save();
+    g.lineJoin = 'round'; g.lineCap = 'round';
+    if (layer === 'behind') {
+      if (fx.kind === 'ring' || !fx.kind) {
+        // a ring opening out from the feet, flattened the way the pitch is
+        const r = (fx.r0 || 8) + ((fx.r1 || 40) - (fx.r0 || 8)) * u;
+        g.globalAlpha = Math.max(0, 1 - u);
+        g.strokeStyle = OUTLINE; g.lineWidth = ((fx.width || 3) + 2.5) * k * 0.8;
+        g.beginPath(); g.ellipse(px, ground - 2 * k, r * k * 0.85, r * k * 0.34, 0, 0, Math.PI * 2); g.stroke();
+        g.strokeStyle = col; g.lineWidth = (fx.width || 3) * k * 0.8;
+        g.beginPath(); g.ellipse(px, ground - 2 * k, r * k * 0.85, r * k * 0.34, 0, 0, Math.PI * 2); g.stroke();
+      } else if (fx.kind === 'burst') {
+        g.globalAlpha = Math.max(0, 1 - u) * 0.9;
+        const r = (fx.size || 24) * k * (0.5 + u);
+        g.beginPath(); g.arc(px, cy, r, 0, Math.PI * 2); g.fillStyle = col; g.fill();
+      }
+      g.globalAlpha = 1;
+      g.restore();
+      return;
+    }
+    // ---- front layer
+    if (fx.kind === 'sparks') {
+      const n = Math.min(16, fx.n || 12);
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2 + u * 2;
+        const r = (10 + u * 46) * k;
+        g.globalAlpha = Math.max(0, 1 - u);
+        g.strokeStyle = OUTLINE; g.lineWidth = 5 * k * 0.7;
+        g.beginPath(); g.moveTo(px + Math.cos(a) * r * 0.6, cy + Math.sin(a) * r * 0.45); g.lineTo(px + Math.cos(a) * r, cy + Math.sin(a) * r * 0.7); g.stroke();
+        g.strokeStyle = col; g.lineWidth = 2.8 * k * 0.7;
+        g.beginPath(); g.moveTo(px + Math.cos(a) * r * 0.6, cy + Math.sin(a) * r * 0.45); g.lineTo(px + Math.cos(a) * r, cy + Math.sin(a) * r * 0.7); g.stroke();
+      }
+    } else if (fx.kind === 'stars') {
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + u * 1.4;
+        const r = (14 + u * 40) * k;
+        g.globalAlpha = Math.max(0, 1 - u);
+        this.star(g, px + Math.cos(a) * r, cy + Math.sin(a) * r * 0.7, 6 * k * (1 - u * 0.4), col);
+      }
+    }
+    g.globalAlpha = 1;
+    // the shout
+    if (def.say) {
+      g.save();
+      g.translate(px, ground - 86 * k - ease * 8 * k);
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.font = `400 ${Math.round(15 * k)}px "Lilita One", system-ui, sans-serif`;
+      g.globalAlpha = Math.min(1, ease * 2.2);
+      g.lineWidth = 6 * k * 0.6; g.strokeStyle = OUTLINE; g.lineJoin = 'round';
+      g.strokeText(def.say, 0, 0);
+      g.fillStyle = col; g.fillText(def.say, 0, 0);
+      g.restore();
+    }
+    g.restore();
+  },
+
+  // ---- settings ----
+  panel_settings(body) {
+    $('modal-title').textContent = tl('SETTINGS');
+    const s = Save.data.settings;
+    const seg = (key, opts) => `<div class="seg" data-key="${key}">${opts.map(([v, l]) => `<button data-v="${v}" class="${String(s[key]) === String(v) ? 'sel' : ''}">${l}</button>`).join('')}</div>`;
+    body.innerHTML = `
+      <div class="set"><span>${tl('LANGUAGE')}</span><button id="lang-btn" class="mid-btn">${I18N.name()}</button></div>
+      <label class="set"><span>${tl('MUSIC')}</span><input type="range" min="0" max="1" step="0.05" value="${s.music}" data-key="music"></label>
+      <label class="set"><span>${tl('SOUND')}</span><input type="range" min="0" max="1" step="0.05" value="${s.sfx}" data-key="sfx"></label>
+      <div class="set"><span>${tl('VIBRATION')}</span>${seg('vibration', [[true, tl('ON')], [false, tl('OFF')]])}</div>
+      <div class="set"><span>${tl('COMMENTARY')}</span>${seg('commentary', [[true, tl('ON')], [false, tl('OFF')]])}</div>
+      <div class="set"><span>${tl('DIFFICULTY')}</span>${seg('difficulty', [['easy', tl('EASY')], ['normal', tl('NORMAL')], ['hard', tl('HARD')]])}</div>
+      <div class="set"><span>${tl('MINIMAP')}</span>${seg('minimap', [[true, tl('ON')], [false, tl('OFF')]])}</div>
+      <div class="set"><span>${tl('REPLAYS')}</span>${seg('replays', [[true, tl('ON')], [false, tl('OFF')]])}</div>
+      <div class="set"><span>${tl('GRAPHICS')}</span>${seg('graphics', [['auto', tl('AUTO')], ['high', tl('HIGH')], ['low', tl('LOW')]])}</div>
+      <div class="set"><span>${tl('CONTROLS')}</span>${seg('controls', [['auto', tl('AUTO')], ['touch', tl('TOUCH')], ['keyboard', tl('KEYBOARD')]])}</div>
+      <div class="set"><span>${tl('HANDED')}</span>${seg('lefty', [[false, tl('RIGHT')], [true, tl('LEFT')]])}</div>
+      ${this.controlsRef()}
+      <div class="set account"><span>${tl('ACCOUNT')}</span><em>${Save.account || tl('GUEST')} · ${Clubs.mine().name}</em><button id="logout" class="${Save.account ? 'mini-danger' : 'mid-btn'}">${Save.account ? tl('LOG OUT') : tl('SIGN IN')}</button></div>
+      ${Net.user ? `<div class="set"><span>${tl('PASSWORD')}</span><em>${tl('Only you can change it, and only from here')}</em><button id="chpw" class="mid-btn">${tl('CHANGE')}</button></div>
+      <form id="pw-form" class="pw-form" hidden autocomplete="off">
+        <input type="password" id="pw-old" placeholder="${tl('CURRENT PASSWORD')}" autocomplete="current-password" maxlength="200">
+        <input type="password" id="pw-new" placeholder="${tl('NEW PASSWORD')}" autocomplete="new-password" maxlength="200">
+        <input type="password" id="pw-new2" placeholder="${tl('NEW PASSWORD AGAIN')}" autocomplete="new-password" maxlength="200">
+        <button type="submit" class="mid-btn green">${tl('SAVE IT')}</button>
+        <p id="pw-msg" class="note"></p>
+      </form>` : ''}
+      ${Net.user ? `<div class="set"><span>${tl('RECOVERY CODE')}</span><em id="code-note">${Net.user.hasRecovery === false ? tl('You do not have one yet. Make one, in case you ever forget your password') : tl('Gets you back in if you forget your password')}</em><button id="mkcode" class="mid-btn">${Net.user.hasRecovery === false ? tl('MAKE ONE') : tl('NEW CODE')}</button></div>
+      <form id="code-form" class="pw-form" hidden autocomplete="off">
+        <input type="password" id="code-pw" placeholder="${tl('YOUR PASSWORD')}" autocomplete="current-password" maxlength="200">
+        <button type="submit" class="mid-btn green">${tl('SHOW MY NEW CODE')}</button>
+        <p id="code-msg" class="note"></p>
+      </form>` : ''}
+      <div class="set"><span>${tl('PRIVACY')}</span><em>${tl('What the game keeps, and what it does not')}</em><a class="mid-btn set-link" href="${API_BASE}/privacy.html" target="_blank" rel="noopener">${tl('READ IT')}</a></div>
+      <div class="set danger"><span>${tl('PROGRESS')}</span><em>${tl('Start again from zero.')}${Net.user ? ' ' + tl('Your account stays.') : ''}</em><button id="reset-progress" class="mini-danger">${tl('RESET SAVE')}</button></div>
+      ${Net.user ? `<div class="set danger"><span>${tl('DELETE ACCOUNT')}</span><em>${tl('Your coins, everything you have won, and your record. Gone for good, everywhere.')}</em><button id="del-acct" class="mini-danger">${tl('DELETE')}</button></div>
+      <form id="del-form" class="pw-form" hidden autocomplete="off">
+        <input type="password" id="del-pw" placeholder="${tl('YOUR PASSWORD')}" autocomplete="current-password" maxlength="200">
+        <button type="submit" class="mini-danger">${tl('DELETE IT FOR GOOD')}</button>
+        <p id="del-msg" class="note"></p>
+      </form>` : ''}`;
+    // inside the app a link to the web is behind the grown-up check; on the web it is just a link
+    $('lang-btn').addEventListener('click', () => { this.tap(); this.closeModal(); this.askLanguage('settings'); });
+    const priv = body.querySelector('a.set-link');
+    if (priv && NATIVE) priv.addEventListener('click', async (e) => {
+      e.preventDefault();
+      if (await this.grownUpCheck(tl('This opens a web page outside the game.'))) window.open(priv.href, '_blank', 'noopener');
+    });
+    $('logout').addEventListener('click', async () => {
+      this.tap();
+      const guest = !Save.account;
+      await Net.logout();
+      UI.showAuth(guest ? UI.GUEST_MSG : tl('Logged out.'));
+      $('auth-msg').classList.remove('bad');
+    });
+    if ($('chpw')) {
+      $('chpw').addEventListener('click', () => { this.tap(); const f = $('pw-form'); f.hidden = !f.hidden; $('pw-msg').textContent = ''; if (!f.hidden) $('pw-old').focus(); });
+      $('pw-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const msg = $('pw-msg'), save = $('pw-form').querySelector('button[type=submit]');
+        msg.classList.remove('bad');
+        if ($('pw-new').value !== $('pw-new2').value) { msg.classList.add('bad'); msg.textContent = tl('The two new ones do not match.'); return; }
+        save.disabled = true; msg.textContent = tl('Changing it…');
+        const r = await Net.changePassword($('pw-old').value, $('pw-new').value);
+        save.disabled = false;
+        if (!r || !r.ok) { msg.classList.add('bad'); msg.textContent = r && r.msg ? I18N.server(r.msg) : tl('Something went wrong'); return; }
+        $('pw-old').value = ''; $('pw-new').value = ''; $('pw-new2').value = '';
+        $('pw-form').hidden = true;
+        this.toast(tl('PASSWORD CHANGED'));
+      });
+    }
+    if ($('mkcode')) {
+      $('mkcode').addEventListener('click', () => { this.tap(); const f = $('code-form'); f.hidden = !f.hidden; $('code-msg').textContent = ''; if (!f.hidden) $('code-pw').focus(); });
+      $('code-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const msg = $('code-msg'), btn = $('code-form').querySelector('button[type=submit]');
+        msg.classList.remove('bad');
+        if (!$('code-pw').value) { msg.classList.add('bad'); msg.textContent = tl('Type your password first.'); return; }
+        btn.disabled = true; msg.textContent = tl('Making it…');
+        const had = Net.user && Net.user.hasRecovery !== false;
+        const r = await Net.newRecovery($('code-pw').value);
+        btn.disabled = false;
+        if (!r || !r.ok) { msg.classList.add('bad'); msg.textContent = r && r.msg ? I18N.server(r.msg) : tl('Something went wrong'); return; }
+        $('code-note') = ''; $('code-form').hidden = true;
+        if (Net.user) Net.user.hasRecovery = true;
+        $('code-note').textContent = tl('Gets you back in if you forget your password');
+        $('mkcode').textContent = tl('NEW CODE');
+        this.showCode(r.recovery, had ? 'made' : 'new');
+      });
+    }
+    body.querySelectorAll('input[type=range]').forEach((inp) => inp.addEventListener('input', () => {
+      s[inp.dataset.key] = parseFloat(inp.value); Save.write(); Sound.applyVolumes();
+    }));
+    body.querySelectorAll('.seg').forEach((g) => g.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+      const key = g.dataset.key;
+      let v = b.dataset.v;
+      if (key === 'vibration' || key === 'minimap' || key === 'replays' || key === 'commentary' || key === 'lefty') v = v === 'true';
+      s[key] = v; Save.write(); this.tap();
+      g.querySelectorAll('button').forEach((x) => x.classList.toggle('sel', x === b));
+      if (key === 'graphics') { Render.quality = 0; Render.resize(); }
+      if (key === 'controls' || key === 'lefty') this.applyControls();
+      if (key === 'vibration' && v) vibrate(20);
+    })));
+    // Deleting the account. The form is hidden until you ask for it, and asks for the password
+    // — the server wants it, and a button that erases everything should take more than one tap.
+    const del = $('del-acct');
+    if (del) {
+      del.addEventListener('click', () => {
+        this.tap();
+        const f = $('del-form');
+        f.hidden = !f.hidden;
+        if (!f.hidden) $('del-pw').focus();
+      });
+      $('del-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const msg = $('del-msg'), pw = $('del-pw').value;
+        if (!pw) { msg.textContent = tl('Type your password first.'); return; }
+        msg.textContent = tl('Deleting\u2026');
+        let r = null;
+        try { r = await Net.api('/api/account/delete', { password: pw }); } catch (err) { r = null; }
+        if (!r || !r.ok) { msg.textContent = r && r.msg ? I18N.server(r.msg) : tl('That did not work. Try again.'); return; }
+        // gone from the server; now gone from this device too, so nothing of it is left behind
+        Net.forget();
+        Save.data = Save.defaults();
+        Save.write();
+        UI.closeModal();
+        UI.showAuth(tl('Your account has been deleted.'));
+      });
+    }
+
+    const reset = $('reset-progress');
+    reset.addEventListener('click', () => {
+      if (!reset.classList.contains('armed')) { reset.classList.add('armed'); reset.textContent = tl('TAP AGAIN TO WIPE'); return; }
+      const settings = Save.data.settings, club = Save.data.club;
+      Save.data = Save.defaults();
+      Save.data.settings = settings; Save.data.club = club;
+      Save.write();
+      this.tap();
+      this.panel_settings(body);
+      this.refreshHome();
+    });
+  },
+
+  controlsRef() {
+    const k = (s, wide) => `<span class="kc${wide ? ' wide' : ''}">${s}</span>`;
+    return `<div class="controls-ref">
+      <div><h3>${tl('PC')}</h3><ul>
+        <li>${tl('{0} move (arrows work too)', [k(tl('WASD'), 1)])}</li>
+        <li>${tl('{0} hold to sprint', [k(tl('SHIFT'), 1)])}</li>
+        <li>${tl('{0} hold to charge, release to shoot', [k(tl('SPACE'), 1)])}</li>
+        <li>${tl('{0} pass &nbsp; {1} skill &nbsp; {2} tackle', [k('E'), k('Q'), k('F')])}</li>
+        <li>${tl('{0} shoot &nbsp; {1} pass &nbsp; {2} skill', [k(tl('LMB'), 1), k(tl('RMB'), 1), k(tl('MMB'), 1)])}</li>
+        <li>${tl('{0} pause', [k(tl('ESC'), 1)])}</li>
+      </ul></div>
+      <div><h3>${tl('SKILLS &amp; TACKLES')}</h3><ul>
+        <li>${tl('Skill + no direction: HOP (jumps tackles)')}</li>
+        <li>${tl('Skill + forward: nutmeg / flick / burst')}</li>
+        <li>${tl('Skill + sideways: SPIN · backward: CRUYFF')}</li>
+        <li>${tl('Any skill makes tackles miss for a moment')}</li>
+        <li>${tl('TACKLE near the carrier to lunge and steal it')}</li>
+        <li>${tl('Sprint drains stamina — empty means wait')}</li>
+        <li>${tl('Phone: tap SPRINT to keep sprinting, tap again to stop')}</li>
+      </ul></div>
+    </div>`;
+  },
+
+  // ---- league: every club, points from every online match its players play ----
+  async panel_league(body) {
+    $('modal-title').textContent = tl('LEAGUE');
+    body.innerHTML = `<p class="note">${tl('Loading the table…')}</p>`;
+    const r = await Net.league();
+    if ($('modal').dataset.kind !== 'league') return;
+    if (!r || !r.ok) { body.innerHTML = `<p class="note">${r && r.msg ? I18N.server(r.msg) : tl("Can't reach the server")}</p>`; return; }
+    const mine = Save.data.club;
+    const pos = r.table.findIndex((row) => row.club === mine) + 1;
+    this._leaguePos = pos;
+    body.innerHTML = `
+      <p class="note">${tl('{0} countries, one ladder. Every online win moves your country up a place, every loss moves it down one.', [r.table.length])} ${pos ? tl('You are playing for {0} — {1} in the table.', [`<b>${Clubs.mine().name}</b>`, ordinal(pos)]) : tl('You are playing for {0}.', [`<b>${Clubs.mine().name}</b>`])}</p>
+      <div class="league-wrap">
+        <div class="lg-table-wrap"><table class="lg-table">
+          <thead><tr><th>#</th><th class="lg-club">${tl('COUNTRY')}</th><th>P</th><th>W</th><th>D</th><th>L</th><th>${tl('GD')}</th><th title="${tl('Last move')}">±</th><th title="${tl('Players')}">👥</th></tr></thead>
+          <tbody>${r.table.map((row, i) => { const c = Clubs.get(row.club); return `<tr class="${row.club === mine ? 'mine' : ''} ${i < 4 ? 'top' : ''}"><td>${i + 1}</td><td class="lg-club"><span class="lg-name"><canvas width="42" height="28" data-club="${c.id}"></canvas><b>${c.name}</b></span></td><td>${row.p}</td><td>${row.w}</td><td>${row.d}</td><td>${row.l}</td><td>${row.gd > 0 ? '+' : ''}${row.gd}</td><td class="mv ${row.move > 0 ? 'up' : row.move < 0 ? 'down' : ''}">${row.move > 0 ? '▲' : row.move < 0 ? '▼' : '–'}</td><td>${row.players}</td></tr>`; }).join('')}</tbody>
+        </table></div>
+        <div class="lg-side">
+          <button class="mid-btn lg-board" data-board>${tl('PLAYER LEADERBOARD')}</button>
+          <h3>${tl('TOP SCORERS')}</h3>
+          ${r.scorers.length ? `<ol class="lg-scorers">${r.scorers.map((s) => `<li><canvas width="42" height="28" data-club="${s.club}"></canvas><b>${s.name}</b><em>${s.goals}</em></li>`).join('')}</ol>` : `<p class="note">${tl('No online goals yet. Be the first.')}</p>`}
+        </div>
+      </div>`;
+    body.querySelectorAll('canvas[data-club]').forEach((cv) => this.flagBadge(cv, Clubs.get(cv.dataset.club)));
+    this.fitWords(body);
+    const lb = body.querySelector('[data-board]');
+    if (lb) lb.addEventListener('click', () => { this.tap(); this.openModal('leaderboard'); });
+  },
+
+  // ---- profile: career stats + achievements ----
+  panel_profile(body) {
+    $('modal-title').textContent = tl('PROFILE');
+    const d = Save.data, c = d.career, ch = Save.character(), lv = Levels.info(d.xp || 0);
+    const winPct = d.matches ? Math.round((d.wins / d.matches) * 100) : 0;
+    const stats = [[tl('MATCHES'), d.matches], [tl('WINS'), d.wins], [tl('GOALS'), d.goals], [tl('ASSISTS'), c.assists], [tl('TACKLES'), c.tackles], [tl('SKILLS'), c.skills],
+      [tl('DODGES'), c.dodges], [tl('POWER GOALS'), c.powerGoals], [tl('HAT-TRICKS'), c.hattricks], [tl('CLEAN SHEETS'), c.cleanSheets], [tl('BEST STREAK'), c.bestStreak], [tl('ONLINE WINS'), c.onlineWins || 0]];
+    const rank = (a) => (Achievements.ready(a) ? 0 : Achievements.claimed(a) ? 2 : 1);
+    const list = ACHIEVEMENTS.slice().sort((a, b) => rank(a) - rank(b) || Achievements.progress(b) / b.goal - Achievements.progress(a) / a.goal);
+    const done = ACHIEVEMENTS.filter((a) => Achievements.claimed(a)).length;
+    body.innerHTML = `
+      <div class="prof-top">
+        <canvas width="96" height="96" id="prof-canvas"></canvas>
+        <div class="prof-id">
+          <strong>${Save.account || tl('YOUR PLAYER')}</strong>
+          <small>${Clubs.mine().name}${Clubs.clubMode() ? ' · ' + Clubs.country().name : ''} · ${tl('LEVEL {0}', [lv.level])} ${rankFor(lv.level)} · <em style="color:${RARITIES[ch.rarity].color}">${RARITIES[ch.rarity].name}</em> · ${tl('OVR {0}', [charOvr(ch)])}</small>
+          <small class="ramp-note">${lv.level >= LEVEL_RAMP_TOP ? tl('Every level makes every match harder — opponents are +{0}% sharper than at level 1 (as sharp as they get).', [levelRampPct(lv.level)]) : tl('Every level makes every match harder — opponents are +{0}% sharper than at level 1.', [levelRampPct(lv.level)])}</small>
+          <span>${tl('{0}W · {1}D · {2}L · {3}% WON', [d.wins, d.draws || 0, d.losses || 0, winPct])}</span>
+        </div>
+        ${this.coinsLine()}
+      </div>
+      <div class="prof-stats">${stats.map(([k, v]) => `<div><b>${v || 0}</b><small>${k}</small></div>`).join('')}</div>
+      <h3 class="prof-h">${tl('ACHIEVEMENTS')} <small>${done} / ${ACHIEVEMENTS.length}</small></h3>
+      <div class="ach-list">${list.map((a) => {
+        const p = Achievements.progress(a), ready = Achievements.ready(a), claimed = Achievements.claimed(a);
+        const right = ready ? `<button class="claim" data-id="${a.id}">${tl('CLAIM')} <span class="coin"></span>${a.coins}</button>`
+          : claimed ? `<span class="ach-done">${tl('DONE')}</span>`
+          : `<span class="ach-prog">${p} / ${a.goal}</span><span class="ach-coins"><span class="coin"></span>${a.coins}</span>`;
+        return `<div class="ach ${ready ? 'ready' : claimed ? 'claimed' : ''}"><i class="medal"></i>
+          <div class="ach-txt"><strong>${a.name}</strong><small>${a.text}</small><span class="ach-bar"><b style="width:${Math.round((p / a.goal) * 100)}%"></b></span></div>
+          <div class="ach-right">${right}</div></div>`;
+      }).join('')}</div>`;
+    this.portrait($('prof-canvas'), Save.look());
+    body.querySelectorAll('.claim').forEach((btn) => btn.addEventListener('click', () => {
+      const coins = Achievements.claim(btn.dataset.id);
+      if (!coins) return;
+      Sound.goalJingle(true); vibrate(25);
+      const at = Pop.at(btn);
+      Pop.coins(btn, coins >= 500 ? 16 : 10);
+      Pop.ring(at.x, at.y, '#ffc21a', 200, 440);
+      Pop.shout(at.x, at.y - 26, '+' + fmtCoins(coins), '#ffc21a', 900);
+      Pop.confetti(at.x, at.y, ['#ffc21a', '#ffffff', '#6fd3ff'], 26);
+      this.toast(tl('+{0} COINS', [coins]));
+      this.redraw(body, () => this.panel_profile(body));
+      this.refreshHome();
+    }));
+  },
+
+  // ---- little canvases ----
+  fakePlayer(look, team = 'blue', keeper = false, number = 10) {
+    return { team, isKeeper: keeper, number, look, vx: 0, vy: 0, fx: 1, fy: 0.3, faceX: 1, kickT: 0, kickDur: 0.2, celebrateT: 0, diveT: 0, stunT: 0, recoverT: 0, seed: 0, runPhase: 0, sad: false, slideT: 0, fallT: 0, hopT: 0 };
+  },
+
+  portrait(cv, look, team = 'blue', keeper = false, number = 10, drop = 0) {
+    const g = cv.getContext('2d');
+    const w = cv.width, h = cv.height;
+    g.clearRect(0, 0, w, h);
+    g.fillStyle = TEAMS[team].board;
+    g.beginPath(); g.arc(w / 2, h / 2, w / 2 - 3, 0, Math.PI * 2); g.fill();
+    g.save();
+    g.beginPath(); g.arc(w / 2, h / 2, w / 2 - 3, 0, Math.PI * 2); g.clip();
+    const k = w / 50;
+    Sprites.player(g, this.fakePlayer(look, team, keeper, number), w / 2 - 2 * k, h * (0.46 + drop) + 56 * k, k, 0);
+    g.restore();
+    g.lineWidth = 3; g.strokeStyle = OUTLINE;
+    g.beginPath(); g.arc(w / 2, h / 2, w / 2 - 3, 0, Math.PI * 2); g.stroke();
+  },
+
+  trailSwatch(cv, id) {
+    const g = cv.getContext('2d'), w = cv.width, h = cv.height;
+    g.fillStyle = '#4fbd3b'; g.fillRect(0, 0, w, h);
+    const pts = [];
+    for (let i = 0; i < 12; i++) pts.push({ x: w - 30 - i * 13, y: h / 2 + Math.sin(i * 0.5) * 6 });
+    const R = { S: 1.6, sx: (x) => x, sy: (y) => y };
+    const b = { trailType: id, trail: pts.slice(1).map((p) => ({ x: p.x, y: p.y, z: -CFG.BALL_R })), x: pts[0].x, y: pts[0].y, z: -CFG.BALL_R };
+    const prev = Game.headless; Game.headless = true; // no stray particles from the swatch
+    Sprites.trail(g, b, R, 0.3);
+    Game.headless = prev;
+    Sprites.ball(g, { x: 0, y: 0, z: 0, vx: 1, vy: 0, roll: 0.6, shot: null, owner: null }, pts[0].x, pts[0].y, 1.8, 0);
+  },
+
+  // Every celebration card plays its animation on a loop while the tab is open — but only the
+  // cards you can actually see, and at 30 a second. Eighty full player drawings a frame was most
+  // of a frame's budget on its own, for sixty cards scrolled off the screen.
+  // one emote, still or at a moment of its loop, filling its card
+  emoteSwatch(cv, id, t = 0.6) {
+    const g = cv.getContext('2d');
+    g.clearRect(0, 0, cv.width, cv.height);
+    Emotes.draw(g, id, cv.width / 2, cv.height / 2, Math.min(cv.width, cv.height), t);
+  },
+
+  // every emote card on screen plays its loop; the ones scrolled away rest (the same as celebrations)
+  animateEmotes(body) {
+    const cards = [...body.querySelectorAll('canvas[data-emote]')];
+    if (!cards.length) return;
+    if (this._emoteIO) this._emoteIO.disconnect();
+    const live = new Set();
+    const io = this._emoteIO = new IntersectionObserver((entries) => {
+      for (const en of entries) { if (en.isIntersecting) live.add(en.target); else live.delete(en.target); }
+    }, { rootMargin: '40px' });
+    for (const cv of cards) { this.emoteSwatch(cv, cv.dataset.emote); io.observe(cv); }
+    const start = performance.now();
+    let last = 0;
+    const frame = (now) => {
+      if ($('modal').hidden || !cards[0].isConnected) { io.disconnect(); if (this._emoteIO === io) this._emoteIO = null; return; }
+      requestAnimationFrame(frame);
+      if (now - last < 33) return;
+      last = now;
+      const t = (now - start) / 1000;
+      for (const cv of live) this.emoteSwatch(cv, cv.dataset.emote, t);
+    };
+    requestAnimationFrame(frame);
+  },
+
+  // ---- the daily emote shop, at the top of CRATES: three a day, 1,000 coins each
+  emoteShopHtml() {
+    const s = Emotes.shop();
+    const h = Emotes.hoursLeft();
+    const when = h < 1 ? tl('NEW ONES IN UNDER AN HOUR') : tlN(Math.floor(h), 'NEW ONES IN {0} HOUR', 'NEW ONES IN {0} HOURS');
+    const cards = s.picks.map((id) => {
+      const e = Emotes.get(id);
+      if (!e) return '';
+      const mine = Emotes.owns(id), r = RARITIES[e.rarity];
+      return `<button class="es-card ${mine ? 'owned' : ''} ${!mine && Save.data.coins < EMOTE_PRICE ? 'poor' : ''}" data-emote-buy="${id}" style="--r:${r.color}">
+        <span class="es-grade">${r.name}</span>
+        <canvas width="120" height="120" data-emote="${id}"></canvas>
+        <strong>${e.name}</strong>
+        <span class="es-price">${mine ? tl('OWNED') : `<span class="coin"></span>${fmtCoins(EMOTE_PRICE)}`}</span>
+      </button>`;
+    }).join('');
+    return `<div class="emote-shop">
+      <div class="es-head"><strong>${tl('DAILY EMOTES')}</strong><small>${when}</small></div>
+      ${cards ? `<div class="es-cards">${cards}</div>` : `<p class="note">${tl('You have every emote.')}</p>`}
+    </div>`;
+  },
+  bindEmoteShop(body) {
+    Emotes.markSeen();
+    this.refreshHome();
+    this.animateEmotes(body);
+    body.querySelectorAll('[data-emote-buy]').forEach((el) => el.addEventListener('click', () => {
+      const id = el.dataset.emoteBuy, e = Emotes.get(id);
+      if (!e) return;
+      // one you have: off to where you put it in your match menu
+      if (Emotes.owns(id)) { this.tap(); this._custTab = 'emote'; this.openModal('customize'); return; }
+      if (Save.data.coins < EMOTE_PRICE) {
+        Sound.steal(); el.classList.add('nope'); Pop.shake(el, 1.4);
+        setTimeout(() => el.classList.remove('nope'), 400);
+        return;
+      }
+      const res = Emotes.buy(id);
+      if (!res.ok) { Sound.steal(); return; }
+      Sound.powerReady();
+      const at = Pop.at(el);
+      Pop.spend(el, 8);
+      Pop.ring(at.x, at.y, RARITIES[e.rarity].color, 170, 420);
+      Pop.prize(el, e.rarity);
+      this.toast(tl('NEW EMOTE: {0}', [e.name]));
+      this.refreshHome();
+      this.redraw(body, () => this.panel_crates(body));
+    }));
+  },
+
+  animateCelebs(body) {
+    const cards = [...body.querySelectorAll('canvas[data-celeb]')];
+    if (!cards.length) return;
+    if (this._celebIO) this._celebIO.disconnect();
+    const live = new Set();
+    const io = this._celebIO = new IntersectionObserver((entries) => {
+      for (const en of entries) {
+        if (en.isIntersecting) { live.add(en.target); this.celebSwatch(en.target, en.target.dataset.celeb, 1.2); }
+        else live.delete(en.target);
+      }
+    }, { rootMargin: '60px' });
+    for (const cv of cards) { this.celebSwatch(cv, cv.dataset.celeb, 1.2); io.observe(cv); }
+    const start = performance.now();
+    let last = 0;
+    const frame = (now) => {
+      if ($('modal').hidden || !cards[0].isConnected) { io.disconnect(); if (this._celebIO === io) this._celebIO = null; return; }
+      requestAnimationFrame(frame);
+      if (now - last < 33) return;
+      last = now;
+      const e = ((now - start) / 1000) % (CELE_TIME + 0.5);
+      for (const cv of live) this.celebSwatch(cv, cv.dataset.celeb, Math.min(e, CELE_TIME - 0.02));
+    };
+    requestAnimationFrame(frame);
+  },
+
+  // How big a celebration may be drawn so what the player is wearing stays inside its card.
+  // Wide wings on a flat body run out sideways, and a tall head item on a flipping body goes over
+  // the top - both clipped, measured by tools/bugscan.js. Poses that fling the player at the edge
+  // on purpose (a rocket launching, an archer drawing a bow) are left alone: shrinking them would
+  // only make the animation smaller. The scan calls this too, so it tests what the game does.
+  // The neon halo cannot be shrunk out of trouble: mid-flip it hangs below the head at a size that
+  // does not scale with the sprite, and touched the bottom edge at every scale tried. So it is
+  // lifted instead, and the other tall head items are drawn a little smaller.
+  TALL_HEAD: { neonhalo: { k: 1, up: 10 }, antlers: { k: 0.85, up: 0 }, firecrown: { k: 0.85, up: 0 }, stormcloud: { k: 0.85, up: 0 } },
+  celebFit(scale, pose, acc) {
+    if (pose && pose.lie && /wings/.test(acc || '')) return { s: Math.min(scale, 0.65), up: 0 };
+    const moving = pose && (pose.jump > 25 || Math.abs(pose.rot || 0) > 1);
+    const t = moving && this.TALL_HEAD[acc];
+    if (t) return { s: scale * t.k, up: t.up };
+    return { s: scale, up: 0 };
+  },
+
+  celebSwatch(cv, id, e = 1.5) {
+    const g = cv.getContext('2d'), w = cv.width, h = cv.height;
+    g.fillStyle = '#55c541'; g.fillRect(0, 0, w, h);
+    g.fillStyle = '#4fbd3b'; for (let x = 0; x < w; x += 40) g.fillRect(x, 0, 20, h);
+    const ch = Save.character();
+    this._celebFake = this._celebFake || {};
+    const p = this._celebFake[id] || (this._celebFake[id] = this.fakePlayer({ hair: ch.hair, hairColor: ch.hairColor, skin: ch.skin, cap: ch.cap, band: ch.band }));
+    p.look = Save.look();
+    const run = CELE_MOVES[id] ? CELE_MOVES[id](e) : 0;
+    p.celebrateT = CELE_TIME - e; p.celebKind = id; p.faceX = 1; p.fx = 1; p.fy = 0.25;
+    p.vx = run; p.vy = 0; p.runPhase = e * 9;
+    const pose = CELE_POSES[id] ? CELE_POSES[id](e, e, p) : null;
+    const lying = pose && pose.lie;
+    const ground = h - 14 - (lying ? 10 : pose && pose.kneel ? 12 : 0), scale = pose && (pose.jump > 25 || id === 'snowangel') ? 0.72 : pose && Math.abs(pose.rot || 0) > 1 ? 0.82 : 0.9;
+    const fit = this.celebFit(scale, pose, p.look && p.look.acc);
+    g.fillStyle = 'rgba(20,60,20,0.28)'; g.beginPath(); g.ellipse(w / 2, ground, lying ? 38 : 25, 8, 0, 0, Math.PI * 2); g.fill();
+    // Wider framing keeps every flip, floor pose, prop and equipped accessory inside its card.
+    Sprites.player(g, p, w / 2 + (lying === 'back' ? 23 : lying === 'front' ? -20 : 0), ground - fit.up, fit.s, e);
+  },
+
+  ballSwatch(cv, id) {
+    const g = cv.getContext('2d'), w = cv.width, h = cv.height;
+    g.fillStyle = '#4fbd3b'; g.fillRect(0, 0, w, h);
+    g.fillStyle = '#55c541'; for (let i = 0; i < 8; i += 2) g.fillRect(i * 25, 0, 25, h);
+    const skin = BALLS.find((b) => b.id === id);
+    g.fillStyle = 'rgba(20,60,20,0.28)'; g.beginPath(); g.ellipse(w / 2, h - 16, 26, 8, 0, 0, Math.PI * 2); g.fill();
+    Sprites.ball(g, { x: 0, y: 0, z: 0, vx: 1, vy: 0.3, roll: 0.9, shot: null, owner: null, skin }, w / 2, h / 2 - 4, 3.2, Game.t);
+  },
+
+  // ---- SEASON PASS (build 122): the bar above PLAY, the window, and the card when a new one starts ----
+  refreshPassBar() {
+    const bar = $('pass-bar');
+    if (!bar) return;
+    const n = Pass.now();
+    bar.hidden = !n;
+    if (!n) return;
+    const s = Pass.state(), ready = Pass.ready(), step = Pass.step(), full = PASS_STEPS[PASS_STEPS.length - 1];
+    bar.innerHTML = `<span class="pb-tag">S${n}</span>
+      <span class="pb-mid"><small>${tl('SEASON PASS')}</small><i class="pb-prog"><b style="width:${Math.round((s.xp / full) * 100)}%"></b></i></span>
+      <em>${step} / 4 · ${Career.timeLeft(Pass.endsAt(n) - Date.now())}</em>${ready ? `<i class="badge">${ready}</i>` : ''}`;
+    if (!bar._wired) { bar._wired = true; bar.addEventListener('click', () => { this.tap(); this.openModal('pass'); }); }
+  },
+
+  panel_pass(body) {
+    $('modal-title').textContent = tl('SEASON PASS');
+    const n = Pass.now();
+    if (!n) { body.innerHTML = `<p class="note">${tl('There is no season pass on right now.')}</p>`; return; }
+    const s = Pass.state(), it = Pass.items(n), full = PASS_STEPS[PASS_STEPS.length - 1];
+    const fresh = this._passNew; this._passNew = false;
+    const next = PASS_STEPS.find((need) => s.xp < need);
+    const card = (i) => {
+      const kind = PASS_REWARDS[i], need = PASS_STEPS[i], open = s.xp >= need, got = s.got[i];
+      const label = { emote: tl('EMOTE'), accessory: tl('ACCESSORY'), celebration: tl('CELEBRATION'), coins: tl('COINS') }[kind];
+      const art = kind === 'emote' ? `<canvas width="120" height="120" data-emote="${it.emote.id}"></canvas>`
+        : kind === 'accessory' ? `<canvas width="120" height="120" data-acc="${it.accessory.id}"></canvas>`
+        : kind === 'celebration' ? `<canvas width="160" height="150" data-celeb="${it.celebration.id}"></canvas>`
+        : `<span class="pass-coins"><span class="coin"></span></span>`;
+      const name = kind === 'coins' ? fmtCoins(PASS_COINS) : it[kind].name;
+      return `<div class="pass-card ${got ? 'got' : open ? 'open' : 'locked'}">
+        <small class="pass-kind">${label}</small>${art}<strong>${name}</strong>
+        ${got ? `<span class="m-paid">${tl('CLAIMED')}</span>` : open ? `<button class="m-claim" data-pass="${i}">${tl('CLAIM')}</button>` : `<em class="pass-need">${tl('{0} XP', [fmtCoins(need)])}</em>`}
+      </div>`;
+    };
+    body.innerHTML = `${this.coinsLine()}
+      ${fresh ? `<div class="pass-new">${tl('NEW SEASON PASS!')}</div>` : ''}
+      <div class="pass-top"><b>${tl('SEASON {0}', [n])}</b><em>${tl('ENDS IN {0}', [Career.timeLeft(Pass.endsAt(n) - Date.now())])}</em></div>
+      <div class="pass-track"><i><b style="width:${Math.round((s.xp / full) * 100)}%"></b></i><span>${fmtCoins(s.xp)} / ${fmtCoins(full)} XP</span></div>
+      <p class="note">${next ? tl('Play matches to fill the pass: every match gives XP. The emote, the accessory and the celebration are only in this pass, and never come back.') : tl('All done! A new pass starts when the season changes.')}</p>
+      <div class="pass-cards">${[0, 1, 2, 3].map(card).join('')}</div>`;
+    body.querySelectorAll('canvas[data-acc]').forEach((cv) => this.accSwatch(cv, cv.dataset.acc));
+    this.animateEmotes(body);
+    this.animateCelebs(body);
+    body.querySelectorAll('[data-pass]').forEach((b) => b.addEventListener('click', () => {
+      const i = Number(b.dataset.pass);
+      if (!Pass.claim(i)) return;
+      Sound.powerReady();
+      const at = Pop.at(b);
+      Pop.ring(at.x, at.y, '#ff3a6e', 180, 420);
+      Pop.confetti(at.x, at.y, ['#ff3a6e', '#ffc21a', '#ffffff'], 26);
+      if (PASS_REWARDS[i] === 'coins') { Pop.coins(b, 16); this.toast(tl('+{0} COINS', [fmtCoins(PASS_COINS)])); }
+      else this.toast(tl('{0} IS YOURS! FIND IT IN CUSTOMIZE', [it[PASS_REWARDS[i]].name]));
+      this.redraw(body, () => this.panel_pass(body));
+      this.refreshHome();
+    }));
+  },
+
+  // the first time you are on the home screen in a new pass, it opens by itself
+  maybePassNew() {
+    const n = Pass.now();
+    const onHome = Game.state === 'home' && !$('home').hidden && $('auth').hidden && $('splash').classList.contains('gone') && $('modal').hidden && $('daily').hidden && $('howto').hidden && !document.querySelector('.overlay.sheet, #trophy:not([hidden])');
+    if (!n || !onHome) return false;
+    const s = Pass.state();
+    if (s.seen === n) return false;
+    s.seen = n; Save.write();
+    this._passNew = true;
+    this.openModal('pass');
+    return true;
+  },
+
+  // after a match: the XP into the pass, a tag on the results, and a word when something opens
+  passAfterMatch(xp) {
+    const tag = $('r-pass');
+    const before = Pass.now() ? Pass.state().xp : 0;
+    const opened = Pass.addXp(xp);
+    const added = Pass.now() ? Pass.state().xp - before : 0;
+    if (tag) { tag.hidden = !(added > 0); tag.textContent = tl('PASS +{0} XP', [fmtCoins(added)]); }
+    if (opened.length) {
+      const kind = PASS_REWARDS[opened[opened.length - 1]];
+      const what = { emote: tl('EMOTE'), accessory: tl('ACCESSORY'), celebration: tl('CELEBRATION'), coins: tl('COINS') }[kind];
+      setTimeout(() => { if (Game.state === 'results') { this.toast(tl('SEASON PASS: {0} UNLOCKED! CLAIM IT', [what])); Sound.powerReady(); } }, 2400);
+    }
+  },
+
+});

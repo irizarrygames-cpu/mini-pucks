@@ -1,0 +1,984 @@
+// Mini Strikers server. Plain Node, no required dependencies.
+//
+//   node server.js [port]
+//
+// Serves the game, keeps accounts (sign up picks your club), stores progress,
+// keeps the league table and runs live online matches over a WebSocket.
+// Accounts live in data.json locally, or Postgres when DATABASE_URL is set.
+
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+const { screenUsername, isRude } = require('./server/moderation');
+const { attach } = require('./server/ws');
+const { createGame } = require('./server/game');
+const { forgetEverywhere } = require('./server/friends');
+const iapLib = require('./server/iap');
+
+const PORT = Number(process.argv[2] || process.env.PORT || 8450);
+const BUILD = 127;
+const ROOT = __dirname;
+const DATA_FILE = process.env.MS_DATA_FILE || path.join(ROOT, 'data.json');
+const PBKDF2_ITERATIONS = 150000;
+const DATABASE_URL = process.env.DATABASE_URL || '';
+
+/* ---------------- storage ---------------- */
+
+let DB = { users: {} };
+// the league ladder is one shared record kept alongside the accounts, under an id no username can be
+const LEAGUE_ID = '#league';
+
+function makeFileStore() {
+  // every write goes through one temp file, so two at once (the lazy batch and a purchase being
+  // written for certain) would trample each other: they take turns instead
+  let turn = Promise.resolve();
+  return {
+    kind: 'file',
+    async load() {
+      try { return JSON.parse(await fs.promises.readFile(DATA_FILE, 'utf8')).users || {}; }
+      catch (e) { if (e.code === 'ENOENT') return {}; throw e; }
+    },
+    write(users) {
+      const run = async () => {
+        await fs.promises.writeFile(DATA_FILE + '.tmp', JSON.stringify({ users }));
+        await fs.promises.rename(DATA_FILE + '.tmp', DATA_FILE);
+      };
+      const p = turn.then(run, run);
+      turn = p.catch(() => {});
+      return p;
+    },
+    // the whole map is rewritten, so a deleted account has to trigger a write of its own
+    async remove() { await this.write(DB.users); },
+  };
+}
+
+function makePostgresStore(url) {
+  let neon;
+  try { ({ neon } = require('@neondatabase/serverless')); }
+  catch (e) { console.error('DATABASE_URL is set but the Postgres driver is missing. Run "npm install".'); process.exit(1); }
+  const sql = neon(url);
+  return {
+    kind: 'postgres',
+    async load() {
+      await sql`CREATE TABLE IF NOT EXISTS strikers_users (id TEXT PRIMARY KEY, data JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now())`;
+      const rows = await sql`SELECT id, data FROM strikers_users`;
+      const users = {};
+      for (const row of rows) users[row.id] = row.data;
+      return users;
+    },
+    async write(users, changed) {
+      for (const id of changed) {
+        if (!users[id]) continue;
+        await sql`INSERT INTO strikers_users (id, data) VALUES (${id}, ${JSON.stringify(users[id])})
+                  ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`;
+      }
+    },
+    async remove(id) { await sql`DELETE FROM strikers_users WHERE id = ${id}`; },
+  };
+}
+
+const store = DATABASE_URL ? makePostgresStore(DATABASE_URL) : makeFileStore();
+const persisted = new Map();
+let saveTimer = null, saving = false, saveQueued = false;
+
+// In-app purchases (server/iap.js). A store transaction can be cashed in once, by one account:
+// txOwner remembers which, rebuilt from the accounts' own ledgers when the server starts.
+const iap = iapLib.create({ isProduction: store.kind === 'postgres' });
+const txOwner = new Map();
+
+function saveDB() { clearTimeout(saveTimer); saveTimer = setTimeout(flushDB, 300); }
+
+// Writes one account to the store right now and says whether it stuck. saveDB() is a lazy batch
+// that may be seconds away; money does not wait for it. A purchase is only acknowledged to the
+// game once it has been written here.
+async function saveUserNow(id) {
+  try { await store.write(DB.users, [id]); persisted.set(id, JSON.stringify(DB.users[id])); return true; }
+  catch (e) { console.error('Could not save ' + id + ':', e.message); return false; }
+}
+setInterval(() => flushDB(), 5000).unref();
+
+async function flushDB() {
+  if (saving) { saveQueued = true; return; }
+  const changed = Object.keys(DB.users).filter((id) => persisted.get(id) !== JSON.stringify(DB.users[id]));
+  if (!changed.length) return;
+  saving = true;
+  try {
+    await store.write(DB.users, changed);
+    for (const id of changed) persisted.set(id, JSON.stringify(DB.users[id]));
+  } catch (e) { console.error('Could not save accounts:', e.message); }
+  finally { saving = false; if (saveQueued) { saveQueued = false; saveDB(); } }
+}
+
+/* ---------------- progress sanity ----------------
+   Progress is kept on the client and posted back (like War Prize). Numbers are clamped
+   and can only climb so fast per save, so a forged save can't hand out a fortune. */
+
+const SAVE_MAX_BYTES = 40000;
+const LIMITS = {
+  // max leaves room for gifts (build 119: a quadrillion, for a 10 trillion one; still far inside the
+  // whole numbers JavaScript keeps exactly); gain still limits what a game can add
+  coins: { min: 0, max: 1000000000000000, gain: 30000 }, // (a season pass pays 20,000 at once)
+  xp: { min: 0, max: 100000000, gain: 8000 },
+  trophies: { min: 0, max: 100000, gain: 3 },
+  matches: { min: 0, max: 1000000, gain: 20 },
+  wins: { min: 0, max: 1000000, gain: 20 },
+  goals: { min: 0, max: 10000000, gain: 400 },
+};
+function clampNumber(v, lim, fallback) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(lim.max, Math.max(lim.min, Math.floor(n)));
+}
+// Build 111 took the characters out and gives back what was spent on them, once. The game does the
+// giving (in the save it sends up), so the first save with `charRefund` set may carry that much
+// more than one game's worth of coins — exactly what the characters in the save before it cost.
+function characterRefund(prev) {
+  if (!prev || prev.charRefund) return 0;
+  const owned = prev.owned && Array.isArray(prev.owned.character) ? prev.owned.character : [];
+  let prices = {};
+  try { prices = (game.prices && game.prices.character) || {}; } catch (e) { /* the game is not built yet */ }
+  let n = 0;
+  for (const id of new Set(owned)) if (typeof id === 'string') n += Math.max(0, Number(prices[id]) || 0);
+  return n;
+}
+function sanitizeSave(incoming, previous, club) {
+  if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) return previous || null;
+  let text;
+  try { text = JSON.stringify(incoming); } catch (e) { return previous || null; }
+  if (!text || text.length > SAVE_MAX_BYTES) return previous || null;
+  const save = JSON.parse(text);
+  const prev = previous && typeof previous === 'object' ? previous : null;
+  const refund = prev && save.charRefund ? characterRefund(prev) : 0;
+  for (const [key, lim] of Object.entries(LIMITS)) {
+    if (!(key in save)) continue;
+    save[key] = clampNumber(save[key], lim, prev ? clampNumber(prev[key], lim, lim.min) : lim.min);
+    if (prev) {
+      const was = clampNumber(prev[key], lim, lim.min);
+      const gain = lim.gain + (key === 'coins' ? refund : 0);
+      if (save[key] > was + gain) save[key] = was + gain;
+    }
+  }
+  // once given back, always given back: an old open game cannot bring the characters (or a
+  // second refund) back
+  if (prev && prev.charRefund) {
+    save.charRefund = 1;
+    if (save.owned && typeof save.owned === 'object') save.owned.character = [];
+  }
+  // season pass items (build 122): never one from a pass that has not started yet
+  // (only ever called from a request, after `game` exists; the try keeps it safe if that changes)
+  try {
+    if (save.owned && typeof save.owned === 'object' && game.pass) {
+      const latest = game.pass.at(Date.now() + 86400000);
+      for (const kind of ['emote', 'accessory', 'celebration']) {
+        if (Array.isArray(save.owned[kind])) save.owned[kind] = save.owned[kind].filter((id) => { const n = game.pass.numOf(id, kind); return !n || n <= latest; });
+      }
+    }
+  } catch (e) { /* the game is not built yet */ }
+  save.club = club; // your club is set at sign-up and lives on the account, not in the save
+  return save;
+}
+
+/* ---------------- gifts ---------------- */
+
+// Coins handed to a player by the game's owner. Each gift is queued once at startup (its key is
+// remembered on the account, so restarts never repeat it) and delivered the next time that
+// player's game syncs: on sign-in / opening the game, or on a save from a game that knows gifts.
+const GIFTS = [
+  { key: '2026-09-17-billion', user: 'irizarrygamez1', club: 'germany', coins: 1000000000 },
+  { key: '2026-09-22-lilotter-billion', user: 'lilotter', coins: 1000000000 },
+  { key: '2026-10-16-irizarry-billion', user: 'irizarry', coins: 1000000000 },
+  { key: '2026-10-16-irizarrygamegh-billion', user: 'irizarrygamegh', coins: 1000000000 },
+  // madeBefore: only the account that already had this name when the gift was written gets it — if
+  // the name is free and someone signs up with it later, they get nothing
+  { key: '2026-11-14-irizarry-10-trillion', user: 'irizarry', coins: 10000000000000, madeBefore: Date.UTC(2026, 10, 14, 19, 45) },
+  { key: '2026-11-14-lilotter-10-trillion', user: 'lilotter', coins: 10000000000000, madeBefore: Date.UTC(2026, 10, 14, 19, 45) },
+  // everything: every item in the game, and every season pass from now on, kept for good (ensureEverything)
+  { key: '2026-11-18-irizarrygame-10-trillion-everything', user: 'irizarrygame', coins: 10000000000000, everything: true, madeBefore: Date.UTC(2026, 10, 18, 3, 40) },
+  // passesUpTo: everything in the game as it is, season passes only up to that one (later passes are
+  // theirs to earn like anyone else)
+  { key: '2026-11-18-havertz-10-trillion-everything', user: 'havertz', coins: 10000000000000, everything: true, passesUpTo: 1, madeBefore: Date.UTC(2026, 10, 18, 21, 30) },
+  // build 127: irizarry gets what irizarrygame has: 10 trillion more, every item, every season pass for good
+  { key: '2026-11-20-irizarry-10-trillion-everything', user: 'irizarry', coins: 10000000000000, everything: true, madeBefore: Date.UTC(2026, 10, 20, 13, 35) },
+];
+// A one-time clean slate, spent the first time it runs.
+//
+// The key lives in the league record, which is the only id here no username can take and which
+// every user listing already skips. Once that record carries this key, nothing happens again.
+// Change the key to do it again; leave it alone and it stays spent.
+const WIPE_KEY = '2026-10-18-prelaunch';
+
+async function wipeEverything() {
+  // Only the real database. Every scan that seeds accounts and then boots the server would
+  // otherwise have them deleted out from under it — lbscan seeds eight and checks the
+  // leaderboard, and the wipe emptied it before the first question was asked. The live accounts
+  // are the ones this is for, and they are the ones in Postgres.
+  if (store.kind !== 'postgres') return;
+  const league = DB.users[LEAGUE_ID];
+  if (league && league.wiped === WIPE_KEY) return;            // already spent
+
+  const ids = Object.keys(DB.users);
+  // Write the marker FIRST and make sure it stuck. If saving it fails, nothing is deleted —
+  // better to not wipe at all than to wipe on every restart for ever.
+  const marker = { order: [], last: {}, wiped: WIPE_KEY, at: Date.now() };
+  DB.users[LEAGUE_ID] = marker;
+  try {
+    await store.write(DB.users, [LEAGUE_ID]);
+  } catch (e) {
+    console.error('wipe: could not save the marker, so nothing was deleted:', e.message);
+    return;
+  }
+  persisted.set(LEAGUE_ID, JSON.stringify(marker));
+
+  let gone = 0;
+  for (const id of ids) {
+    if (id === LEAGUE_ID) continue;
+    // Out of memory first, then out of the store. The file store rewrites the whole file
+    // from DB.users, so removing before deleting writes the record straight back — the last
+    // account survived the wipe when it was the other way round.
+    delete DB.users[id];
+    persisted.delete(id);
+    try { await store.remove(id); gone++; } catch (e) { console.error('wipe: could not remove ' + id + ':', e.message); }
+  }
+  tokens.clear();
+  leagueCache = null;
+  boardCache = null;
+  console.log('wipe ' + WIPE_KEY + ': removed ' + gone + ' accounts');
+}
+
+function queueGifts(quiet) {
+  for (const g of GIFTS) {
+    const u = getUser(g.user);
+    if (!u) { if (!quiet) console.log(`gift ${g.key}: no account ${g.user}`); continue; }
+    if (g.club && u.club !== g.club) { console.log(`gift ${g.key}: ${g.user} plays for ${u.club}, not ${g.club}`); continue; }
+    if (g.madeBefore && !(Number(u.created) < g.madeBefore)) { if (!quiet) console.log(`gift ${g.key}: ${g.user} was made after the gift`); continue; }
+    u.giftsDone = Array.isArray(u.giftsDone) ? u.giftsDone : [];
+    if (u.giftsDone.includes(g.key)) continue;
+    u.giftsDone.push(g.key);
+    u.pendingCoins = (Number(u.pendingCoins) || 0) + g.coins;
+    if (g.everything) {
+      // a gift with no limit on passes wins over one with a limit; two limits, the later pass
+      if (!g.passesUpTo) delete u.everythingUpTo;
+      else if (!u.everything) u.everythingUpTo = g.passesUpTo;
+      else if (u.everythingUpTo) u.everythingUpTo = Math.max(Number(u.everythingUpTo) || 0, g.passesUpTo);
+      u.everything = true;
+    }
+    saveDB();
+    console.log(`gift ${g.key}: ${g.coins} coins queued for ${g.user}${g.everything ? ', and everything' : ''}`);
+  }
+}
+// An account given everything (build 122) owns every item in the game, and each season pass's
+// emote, accessory and celebration as that pass starts, with the pass shown as finished and its
+// coins paid once. It lives on the account, not in the save, so it is put back into the save every
+// time the game syncs: a game that sends up a save without them (an older app, or one opened
+// before the gift) cannot lose them. When something had to be put in, the save is marked as newer
+// than anything the game has, so the next time the game opens it takes this copy.
+function ensureEverything(u) {
+  if (!u || !u.everything) return false;
+  if (!u.save || typeof u.save !== 'object' || Array.isArray(u.save)) u.save = {};
+  const s = u.save;
+  if (!s.owned || typeof s.owned !== 'object' || Array.isArray(s.owned)) s.owned = {};
+  let changed = false;
+  const add = (kind, id) => {
+    if (!Array.isArray(s.owned[kind])) s.owned[kind] = [];
+    if (!s.owned[kind].includes(id)) { s.owned[kind].push(id); changed = true; }
+  };
+  for (const [kind, ids] of Object.entries(game.allItems)) for (const id of ids) add(kind, id);
+  const now = game.pass.now(), upTo = Number(u.everythingUpTo) > 0 ? Number(u.everythingUpTo) : Infinity;
+  for (let n = 1; n <= Math.min(now, upTo); n++) { add('emote', 'pe' + n); add('accessory', 'pa' + n); add('celebration', 'pc' + n); }
+  if (now && now <= upTo) {
+    const steps = game.pass.steps, full = steps[steps.length - 1], p = s.pass;
+    const done = p && typeof p === 'object' && p.n === now && Number(p.xp) >= full && Array.isArray(p.got) && p.got.length === steps.length && p.got.every((g) => g === true);
+    if (!done) { s.pass = { n: now, xp: full, got: steps.map(() => true), seen: p && typeof p === 'object' && p.n === now ? Number(p.seen) || 0 : 0 }; changed = true; }
+    // the pass's coins, once a pass (remembered on the account, so a save cannot ask twice)
+    if (Number(u.everythingPass) !== now) { u.everythingPass = now; u.pendingCoins = (Number(u.pendingCoins) || 0) + game.pass.coins; changed = true; }
+  }
+  if (changed) { s.savedAt = Math.max(Date.now(), (Number(s.savedAt) || 0) + 1); saveDB(); }
+  return changed;
+}
+// moves queued coins into the stored save; returns how many arrived
+function deliverGifts(u) {
+  ensureEverything(u);
+  // a season that finished while they were away pays out here
+  const r = rankOf(u);
+  if (r.owed > 0) { u.pendingCoins = (Number(u.pendingCoins) || 0) + r.owed; r.owed = 0; saveDB(); }
+  u.rank = r;
+  const n = Number(u.pendingCoins) || 0;
+  if (n <= 0) return 0;
+  if (!u.save || typeof u.save !== 'object') u.save = {};
+  u.save.coins = clampNumber((Number(u.save.coins) || 0) + n, LIMITS.coins, 0);
+  u.pendingCoins = 0;
+  saveDB();
+  return n;
+}
+
+/* ---------------- accounts ---------------- */
+
+const getUser = (id) => DB.users[id];
+const tokens = new Map();
+const SESSIONS_PER_USER = 5;
+const SESSION_MAX_AGE = 30 * 24 * 60 * 60 * 1000;
+
+function str(v) {
+  if (v === null || v === undefined) return '';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  return '';
+}
+const normalizeId = (name) => str(name).trim().toLowerCase();
+const userName = (id) => (getUser(id) && getUser(id).name) || String(id).toUpperCase();
+
+function hashPassword(password, salt, iterations) {
+  return new Promise((resolve, reject) => {
+    crypto.pbkdf2(str(password), salt, iterations, 32, 'sha256', (err, key) => (err ? reject(err) : resolve(key.toString('base64'))));
+  });
+}
+
+// Deliberately NOT checking whether another account uses the same password (see War Prize).
+const COMMON_PASSWORDS = new Set(['password', 'password1', 'passw0rd', '12345678', '123456789', '1234567890', 'qwerty123', 'qwertyui',
+  '1q2w3e4r', 'abc12345', 'iloveyou', 'letmein1', 'welcome1', 'admin123', 'football', 'baseball', 'sunshine', 'princess',
+  'dragon123', 'monkey123', 'superman', 'trustno1', 'starwars', 'whatever', 'soccer123', 'messi123', 'ronaldo7']);
+
+function validateUsername(username) {
+  const id = normalizeId(username);
+  if (id.length < 3 || id.length > 14) return 'Username must be 3-14 characters';
+  if (!/^[a-z0-9_]+$/.test(id)) return 'Use letters, numbers and _ only';
+  return null;
+}
+// Sign-up only. Login must never run password policy: old accounts have to keep working.
+function validateNewPassword(username, password) {
+  const bad = validateUsername(username);
+  if (bad) return bad;
+  const pw = str(password);
+  if (pw.length < 8) return 'Password must be at least 8 characters';
+  if (pw.length > 200) return 'Password is too long';
+  if (COMMON_PASSWORDS.has(pw.toLowerCase()) || /^(.)\1+$/.test(pw)) return 'That password is too easy to guess';
+  if (pw.toLowerCase() === normalizeId(username)) return "Password can't be your username";
+  return null;
+}
+
+// A recovery code: shown once, kept only scrambled like a password, and good for one reset. It is
+// the way back in for someone who forgot their password, since accounts have no email to send to.
+// 12 letters and digits with the easily mixed-up ones (0/O, 1/I) left out, written XXXX-XXXX-XXXX.
+const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const RECOVER_TRIES = 5, RECOVER_LOCK = 30 * 60000;
+const recoverFails = new Map(); // account id -> { n, at }: wrong codes for that account, in memory only
+function makeRecoveryCode() {
+  let s = '';
+  for (let i = 0; i < 12; i++) s += CODE_CHARS[crypto.randomInt(CODE_CHARS.length)];
+  return s.match(/.{4}/g).join('-');
+}
+// what was typed, as the 12 characters that matter (spaces, dashes, small letters and a phone
+// keyboard's full-width letters are all fine)
+const cleanCode = (v) => { let s = str(v); try { s = s.normalize('NFKC'); } catch (e) { /* leave it */ } return s.toUpperCase().replace(/[^A-Z0-9]/g, ''); };
+async function newRecovery() {
+  const code = makeRecoveryCode(), salt = crypto.randomBytes(16).toString('base64');
+  return { code, record: { hash: await hashPassword(cleanCode(code), salt, PBKDF2_ITERATIONS), salt, iterations: PBKDF2_ITERATIONS, at: Date.now() } };
+}
+async function recoveryMatches(u, typed) {
+  const code = cleanCode(typed), r = u && u.recovery;
+  if (code.length !== 12 || !r || !r.hash || !r.salt) return false;
+  return (await hashPassword(code, r.salt, r.iterations || PBKDF2_ITERATIONS)) === r.hash;
+}
+// every device signed out of this account: its tokens, its sessions, and its live connection
+function signOutEverywhere(id) {
+  for (const [tok, owner] of tokens) if (owner === id) tokens.delete(tok);
+  const u = getUser(id);
+  if (u) u.sessions = [];
+  game.removeUser(id, 4001);
+}
+
+function issueToken(id) {
+  const token = crypto.randomBytes(24).toString('hex');
+  tokens.set(token, id);
+  const u = getUser(id), now = Date.now();
+  u.sessions = (u.sessions || []).filter((s) => s && s.token && now - (s.at || 0) < SESSION_MAX_AGE);
+  u.sessions.push({ token, at: now });
+  while (u.sessions.length > SESSIONS_PER_USER) tokens.delete(u.sessions.shift().token);
+  saveDB();
+  return token;
+}
+function forgetSession(token) {
+  const id = tokens.get(token);
+  tokens.delete(token);
+  const u = id && getUser(id);
+  if (u && u.sessions) { u.sessions = u.sessions.filter((s) => s.token !== token); saveDB(); }
+}
+function restoreSessions() {
+  const now = Date.now();
+  for (const [id, u] of Object.entries(DB.users)) {
+    if (id === LEAGUE_ID) continue;
+    u.sessions = (u.sessions || []).filter((s) => s && s.token && now - (s.at || 0) < SESSION_MAX_AGE);
+    for (const s of u.sessions) tokens.set(s.token, id);
+  }
+}
+const userIdFromToken = (token) => tokens.get(str(token));
+
+/* ---------------- reports and bans ----------------
+   No admins. Players report a rude or weird username, and once REPORTS_TO_BAN different players
+   have, the account is banned by itself; a name the username filter turns down goes on the first
+   report. Each time the server starts, the filter also looks over every name already taken, so
+   anything made before it was this strict is caught too. A banned account can't sign in or play
+   online, drops off every friends list and leaderboard, and keeps its name so nobody can take it. */
+const REPORTS_TO_BAN = 3;
+const REPORT_MIN_AGE = 60 * 60 * 1000;     // an account an hour old or more can report
+const REPORT_KEEP = 30 * 86400000;         // a report older than this stops counting
+// what a banned account is told when it tries to sign in
+const bannedMsg = (u) => (u.banned && u.banned.why === 'reported'
+  ? 'This account has been banned. Other players reported its username.'
+  : 'This account has been banned. Its username breaks the rules.');
+function banAccount(id, why) {
+  const u = getUser(id);
+  if (!u || id === LEAGUE_ID || u.banned) return false;
+  u.banned = { at: Date.now(), why };
+  delete u.reports;
+  signOutEverywhere(id);
+  forgetEverywhere(DB.users, id, LEAGUE_ID);
+  leagueCache = null; boardCache = null;
+  saveDB();
+  console.log(`banned ${u.name} (${why})`);
+  return true;
+}
+function sweepNames() {
+  let n = 0;
+  for (const [id, u] of Object.entries(DB.users)) {
+    if (id === LEAGUE_ID || !u || u.banned) continue;
+    if (isRude(u.name || id) && banAccount(id, 'username')) n++;
+  }
+  if (n) console.log(`username check: ${n} account${n === 1 ? '' : 's'} banned`);
+}
+
+/* ---------------- league ----------------
+   Every online match adds to your own record, and your record counts for your country. The table's
+   ORDER is a ladder: every online win moves your country up one place, every loss down one (a draw
+   leaves it). It started from the old points order, and new countries join at the bottom. */
+
+// the old points order (how the ladder was seeded)
+function pointsOrder() {
+  const t = new Map(CLUBS.map((c) => [c.id, { club: c.id, players: 0, pts: 0, gd: 0, gf: 0 }]));
+  for (const [id, u] of Object.entries(DB.users)) {
+    if (id === LEAGUE_ID) continue;
+    const r = t.get(u.club), o = u.online;
+    if (!r) continue;
+    r.players++;
+    if (o) { r.pts += (o.w | 0) * 3 + (o.d | 0); r.gd += (o.gf | 0) - (o.ga | 0); r.gf += o.gf | 0; }
+  }
+  return [...t.values()].sort((a, b) => b.pts - a.pts || b.gd - a.gd || b.gf - a.gf || b.players - a.players).map((r) => r.club);
+}
+function ladder() {
+  let rec = DB.users[LEAGUE_ID];
+  if (!rec || !Array.isArray(rec.order)) rec = DB.users[LEAGUE_ID] = { order: pointsOrder(), last: {} };
+  // every country exactly once
+  const known = new Set(CLUBS.map((c) => c.id));
+  const order = rec.order.filter((id, i, a) => known.has(id) && a.indexOf(id) === i);
+  for (const c of CLUBS) if (!order.includes(c.id)) order.push(c.id);
+  if (order.length !== rec.order.length || order.some((id, i) => id !== rec.order[i])) { rec.order = order; saveDB(); }
+  if (!rec.last || typeof rec.last !== 'object') rec.last = {};
+  return rec;
+}
+// d > 0: a win, up one place (swapping with the country above); d < 0: a loss, down one
+function leagueMove(club, d) {
+  const rec = ladder(), i = rec.order.indexOf(club);
+  if (i < 0 || !d) return;
+  const j = i - Math.sign(d);
+  if (j >= 0 && j < rec.order.length) [rec.order[i], rec.order[j]] = [rec.order[j], rec.order[i]];
+  rec.last[club] = { d: Math.sign(d), t: Date.now() };
+  leagueCache = null;
+  saveDB();
+}
+// one match's result for every country in it ([club, +1 | -1] ...): winners go up first, and a loser the
+// winner's swap already pushed down a place has had its drop (two neighbours playing just swap)
+function leagueResult(list) {
+  const rec = ladder(), losers = new Set(list.filter(([, d]) => d < 0).map(([c]) => c)), dropped = new Set();
+  for (const [club, d] of list) {
+    if (d <= 0) continue;
+    const i = rec.order.indexOf(club);
+    if (i < 0) continue;
+    if (i > 0) { const other = rec.order[i - 1]; [rec.order[i - 1], rec.order[i]] = [club, other]; if (losers.has(other)) dropped.add(other); }
+    rec.last[club] = { d: 1, t: Date.now() };
+  }
+  for (const [club, d] of list) {
+    if (d >= 0 || dropped.has(club)) { if (d < 0) rec.last[club] = { d: -1, t: Date.now() }; continue; }
+    const i = rec.order.indexOf(club);
+    if (i < 0) continue;
+    if (i < rec.order.length - 1) { const other = rec.order[i + 1]; [rec.order[i], rec.order[i + 1]] = [other, club]; }
+    rec.last[club] = { d: -1, t: Date.now() };
+  }
+  leagueCache = null;
+  saveDB();
+}
+const leaguePos = (club) => ladder().order.indexOf(club) + 1;
+
+// the rank record on an account, rolled over when a new season has started
+function rankOf(u) {
+  const r = u && u.rank && typeof u.rank === 'object' ? u.rank : {};
+  const now = seasonNow();
+  const rp = Math.max(0, Number(r.rp) || 0);
+  if ((r.season | 0) !== now) {
+    // a season ended: pay out for where they finished, then start again a tier lower
+    const paid = (r.season | 0) < now && rp > 0 ? rankTier(rp).reward : 0;
+    const carry = Math.max(0, Math.round(rp * 0.4));
+    return { season: now, rp: carry, best: Math.max(rp, Number(r.best) || 0), owed: paid + (Number(r.owed) || 0), last: rp ? rankTier(rp).id : null, wins: 0, played: 0 };
+  }
+  return { season: now, rp, best: Math.max(rp, Number(r.best) || 0), owed: Number(r.owed) || 0, last: r.last || null, wins: r.wins | 0, played: r.played | 0 };
+}
+// the points really moved: a loss at 0 RP takes nothing, so the result says so instead of -5
+function rankRecord(u, outcome, challenges) {
+  const r = rankOf(u);
+  const before = r.rp;
+  r.rp = Math.max(0, r.rp + rankDelta(outcome, challenges));
+  r.best = Math.max(r.best, r.rp);
+  r.played++;
+  if (outcome === 'win') r.wins++;
+  u.rank = r;
+  return r.rp - before;
+}
+// what the client is told about a rank (and any season payout waiting)
+function rankView(u) {
+  const r = rankOf(u);
+  u.rank = r;
+  const tier = rankTier(r.rp), next = rankNext(r.rp);
+  return { rp: r.rp, tier: tier.id, name: tier.name, next: next ? { id: next.id, name: next.name, at: next.at } : null,
+    season: r.season, ends: seasonEndsAt(r.season), best: r.best, wins: r.wins, played: r.played, last: r.last };
+}
+
+function onlineRecord(id, { outcome, goalsFor, goalsAgainst, goals, ranked, challenges }) {
+  const u = getUser(id);
+  if (!u) return;
+  const o = u.online || (u.online = { p: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, goals: 0 });
+  o.p++;
+  if (outcome === 'win') o.w++; else if (outcome === 'draw') o.d++; else o.l++;
+  o.gf += goalsFor | 0; o.ga += goalsAgainst | 0; o.goals += goals | 0;
+  const moved = ranked ? rankRecord(u, outcome, challenges) : 0; // ranked matches are the only thing that moves a rank
+  leagueCache = null;
+  boardCache = null;
+  saveDB();
+  return moved;
+}
+
+let leagueCache = null;
+// The ranked ladder: everyone with points this season, best first. Read-only — it never rolls
+// anyone's season over, since that belongs to them playing or logging in.
+let boardCache = null;
+function rankBoard(meId, limit) {
+  const season = seasonNow();
+  if (!boardCache || boardCache.season !== season || Date.now() - boardCache.at > 15000) {
+    const rows = [];
+    for (const [id, u] of Object.entries(DB.users)) {
+      if (id === LEAGUE_ID || !u || u.banned || !u.rank || typeof u.rank !== 'object') continue;
+      if ((u.rank.season | 0) !== season) continue; // last season's points are last season's
+      const rp = Math.max(0, Number(u.rank.rp) || 0);
+      if (rp <= 0) continue;
+      rows.push({ id, name: u.name, club: u.club, rp, wins: u.rank.wins | 0, played: u.rank.played | 0 });
+    }
+    // most points first, then most wins, then alphabetical so the order never wobbles
+    rows.sort((a, b) => b.rp - a.rp || b.wins - a.wins || String(a.name).localeCompare(String(b.name)));
+    boardCache = { at: Date.now(), season, rows };
+  }
+  const rows = boardCache.rows;
+  const view = (r, i) => { const t = rankTier(r.rp); return { pos: i + 1, name: r.name, club: r.club, rp: r.rp, tier: t.id, tierName: t.name, wins: r.wins, played: r.played }; };
+  const mine = meId ? rows.findIndex((r) => r.id === meId) : -1;
+  return { season, ends: seasonEndsAt(season), players: rows.length, top: rows.slice(0, limit).map(view), you: mine >= 0 ? view(rows[mine], mine) : null };
+}
+
+function leagueTable() {
+  if (leagueCache && Date.now() - leagueCache.at < 10000) return leagueCache.rows;
+  const rows = CLUBS.map((c) => ({ club: c.id, players: 0, p: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0 }));
+  const byId = new Map(rows.map((r) => [r.club, r]));
+  const scorers = [];
+  for (const [id, u] of Object.entries(DB.users)) {
+    if (id === LEAGUE_ID || !u || u.banned) continue;
+    const r = byId.get(u.club);
+    if (!r) continue;
+    r.players++;
+    const o = u.online;
+    if (!o) continue;
+    for (const k of ['p', 'w', 'd', 'l', 'gf', 'ga']) r[k] += o[k] | 0;
+    if (o.goals) scorers.push({ name: u.name, club: u.club, goals: o.goals, p: o.p });
+  }
+  const lad = ladder(), rank = new Map(lad.order.map((id, i) => [id, i]));
+  for (const r of rows) { r.pts = r.w * 3 + r.d; r.gd = r.gf - r.ga; r.move = lad.last[r.club] ? lad.last[r.club].d : 0; }
+  rows.sort((a, b) => rank.get(a.club) - rank.get(b.club));
+  scorers.sort((a, b) => b.goals - a.goals || a.p - b.p);
+  leagueCache = { at: Date.now(), rows: { table: rows, scorers: scorers.slice(0, 10) } };
+  return leagueCache.rows;
+}
+
+/* ---------------- http ---------------- */
+
+function sendJSON(res, code, obj) {
+  const body = JSON.stringify(obj);
+  res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Content-Length': Buffer.byteLength(body) });
+  res.end(body);
+}
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    let data = '';
+    req.on('data', (c) => { data += c; if (data.length > 256 * 1024) { reject(new Error('too large')); req.destroy(); } });
+    req.on('end', () => { try { resolve(data ? JSON.parse(data) : {}); } catch (e) { reject(e); } });
+    req.on('error', reject);
+  });
+}
+
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json',
+  '.webmanifest': 'application/manifest+json', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
+const DENY_FILES = new Set(['data.json', 'data.json.tmp', 'server.js', 'package.json', 'package-lock.json', 'serve.py', 'readme.md', 'publishing.md', 'render.yaml']);
+const DENY_DIRS = new Set(['server', 'node_modules', 'app', 'signing']);
+// the test tools are for this computer only
+const LOCAL_ONLY_DIRS = new Set(['tools']);
+const isLoopback = (req) => /^(::1|127\.|::ffff:127\.)/.test(req.socket.remoteAddress || '') && !req.headers['x-forwarded-for'];
+
+function serveStatic(req, res, urlPath) {
+  let rel;
+  try { rel = decodeURIComponent(urlPath === '/' ? '/index.html' : urlPath); }
+  catch (e) { res.writeHead(400).end('Bad request'); return; }
+  const segs = rel.split('/').filter(Boolean);
+  if (segs.some((s) => s.startsWith('.')) || (segs.length > 1 && (DENY_DIRS.has(segs[0]) || (LOCAL_ONLY_DIRS.has(segs[0]) && !isLoopback(req))))) { res.writeHead(404).end('Not found'); return; }
+  const full = path.resolve(ROOT, '.' + rel);
+  if (full !== ROOT && !full.startsWith(ROOT + path.sep)) { res.writeHead(403).end('Forbidden'); return; }
+  if (DENY_FILES.has(path.basename(full).toLowerCase())) { res.writeHead(403).end('Forbidden'); return; }
+  fs.readFile(full, (err, buf) => {
+    if (err) { res.writeHead(404).end('Not found'); return; }
+    // the offline copy is named after the build, so a deploy replaces it as a set rather than
+    // letting files from two builds sit side by side
+    // Both the offline copy and the page itself are stamped with the build. The copy is named
+    // after it; the page uses it to notice when it is running something the server has replaced.
+    const base = path.basename(full);
+    if (base === 'sw.js' || base === 'index.html') buf = Buffer.from(buf.toString('utf8').replace('__BUILD__', String(BUILD)), 'utf8');
+    res.writeHead(200, { 'Content-Type': MIME[path.extname(full).toLowerCase()] || 'application/octet-stream', 'Cache-Control': 'no-store' });
+    res.end(buf);
+  });
+}
+
+// The game inside a store app is not served by this server, so its requests come from another
+// origin and the browser engine inside the app asks first. Only the app's own origins are let in
+// (plus a developer's localhost, and only when the real database is not in use). The game sends
+// its sign-in token in the request body, never in a cookie, so there is nothing for another site
+// to ride on either way.
+const APP_ORIGINS = new Set(['capacitor://localhost', 'ionic://localhost', 'https://localhost']);
+function corsHeaders(req) {
+  const o = req.headers.origin;
+  if (!o) return null;
+  const dev = store.kind !== 'postgres' && /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(o);
+  if (!APP_ORIGINS.has(o) && !dev) return null;
+  return { 'Access-Control-Allow-Origin': o, Vary: 'Origin', 'Access-Control-Allow-Methods': 'POST, GET, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Max-Age': '600' };
+}
+
+const hits = new Map();
+function throttled(ip, key, limit, windowMs) {
+  const k = ip + ':' + key, now = Date.now();
+  const rec = hits.get(k) || { n: 0, t: now };
+  if (now - rec.t > windowMs) { rec.n = 0; rec.t = now; }
+  rec.n++;
+  hits.set(k, rec);
+  return rec.n > limit;
+}
+setInterval(() => { const cut = Date.now() - 600000; for (const [k, v] of hits) if (v.t < cut) hits.delete(k); }, 60000).unref();
+
+/* ---------------- online World Cup and Champions Cup ----------------
+   Your runs live on your account: which round you're in (0 = round of 16 ... 3 = final) and how
+   many you've won. Win and you go through; lose (or walk off) and you start again next time.
+   'wc' is the World Cup (your country), 'cc' the Champions Cup (your club): one run each. */
+const WC_LAST = 3;
+const cupKey = (kind) => (kind === 'cc' ? 'cc' : 'wc');
+function worldCupOf(u, kind = 'wc') {
+  const k = cupKey(kind);
+  const w = u && u[k] && typeof u[k] === 'object' ? u[k] : {};
+  return { round: Math.max(0, Math.min(WC_LAST, Number(w.round) | 0)), titles: Math.max(0, Number(w.titles) | 0) };
+}
+const worldCup = {
+  round: (id, kind) => worldCupOf(getUser(id), kind).round,
+  result(id, won, kind) {
+    const u = getUser(id);
+    if (!u) return { round: 0, champion: false, titles: 0 };
+    const k = cupKey(kind), w = worldCupOf(u, k);
+    const champion = won && w.round === WC_LAST;
+    u[k] = { round: won && !champion ? w.round + 1 : 0, titles: w.titles + (champion ? 1 : 0) };
+    saveDB();
+    return { round: u[k].round, champion, titles: u[k].titles };
+  },
+};
+
+const game = createGame({
+  getUser, userName, saveDB, onlineRecord, worldCup, ranked: { view: (id) => (getUser(id) ? rankView(getUser(id)) : null) },
+  league: { move: (club, d) => leagueMove(club, d), result: (list) => leagueResult(list), pos: (club) => leaguePos(club) },
+  isNameTaken: (name) => !!getUser(String(name).toLowerCase()),
+});
+const CLUBS = game.clubs;
+// the ranked-season rules live with the game rules; the accounts here just keep the points
+const { tier: rankTier, next: rankNext, delta: rankDelta, seasonNow, seasonEndsAt } = game.rank;
+
+const server = http.createServer((req, res) => {
+  handleRequest(req, res).catch((err) => {
+    console.error('request failed:', req.method, req.url, '-', err && err.message);
+    try { sendJSON(res, 500, { ok: false, msg: 'Something went wrong' }); } catch (e) {}
+  });
+});
+
+function publicUser(id) {
+  const u = getUser(id);
+  return { name: u.name, club: u.club, save: u.save, online: u.online || { p: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, goals: 0 }, wc: worldCupOf(u, 'wc'), cc: worldCupOf(u, 'cc'), rank: rankView(u), hasRecovery: !!(u.recovery && u.recovery.hash) };
+}
+
+
+async function handleRequest(req, res) {
+  let url;
+  try { url = new URL(req.url, 'http://localhost'); } catch (e) { return sendJSON(res, 400, { ok: false, msg: 'Bad request' }); }
+  const route = url.pathname;
+  const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+  if (!route.startsWith('/api/')) return serveStatic(req, res, route);
+  const cors = corsHeaders(req);
+  if (cors) for (const [k, v] of Object.entries(cors)) res.setHeader(k, v);
+  if (req.method === 'OPTIONS') { res.writeHead(cors ? 204 : 403).end(); return; }
+  // the host's health check is a plain GET, so this one route answers both
+  if (route === '/api/health' && req.method === 'GET') return sendJSON(res, 200, { ok: true, build: BUILD, storage: store.kind });
+  if (req.method !== 'POST') return sendJSON(res, 405, { ok: false, msg: 'Use POST' });
+
+  let body;
+  try { body = await readBody(req); } catch (e) { return sendJSON(res, 400, { ok: false, msg: 'Bad request' }); }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) body = {};
+
+  if (route === '/api/health') return sendJSON(res, 200, { ok: true, build: BUILD, storage: store.kind });
+
+  if (route === '/api/league') {
+    if (throttled(ip, 'league', 60, 60000)) return sendJSON(res, 429, { ok: false, msg: 'Slow down' });
+    return sendJSON(res, 200, { ok: true, ...leagueTable() });
+  }
+
+  if (route === '/api/leaderboard') {
+    if (throttled(ip, 'board', 60, 60000)) return sendJSON(res, 429, { ok: false, msg: 'Slow down' });
+    const limit = Math.max(3, Math.min(50, Number(body.limit) || 25));
+    return sendJSON(res, 200, { ok: true, ...rankBoard(userIdFromToken(body.token), limit) });
+  }
+
+  if (route === '/api/auth/signup' || route === '/api/auth/login') {
+    if (throttled(ip, 'auth', 20, 60000)) return sendJSON(res, 429, { ok: false, msg: 'Too many attempts, wait a minute' });
+    const signup = route === '/api/auth/signup';
+    const problem = signup ? validateNewPassword(body.username, body.password) : validateUsername(body.username);
+    if (problem) return sendJSON(res, 200, { ok: false, msg: problem });
+    const id = normalizeId(body.username);
+    if (signup) {
+      const rude = screenUsername(body.username);
+      if (rude) return sendJSON(res, 200, { ok: false, msg: rude });
+      const club = str(body.club);
+      if (!CLUBS.some((c) => c.id === club)) return sendJSON(res, 200, { ok: false, msg: 'Pick your country' });
+      if (getUser(id)) return sendJSON(res, 200, { ok: false, msg: 'That username is taken' });
+      const salt = crypto.randomBytes(16).toString('base64');
+      const hash = await hashPassword(body.password, salt, PBKDF2_ITERATIONS);
+      const rec = await newRecovery();
+      if (getUser(id)) return sendJSON(res, 200, { ok: false, msg: 'That username is taken' });
+      DB.users[id] = { name: id.toUpperCase(), hash, salt, iterations: PBKDF2_ITERATIONS, created: Date.now(), club, save: null, online: null, recovery: rec.record };
+      // a guest's progress on this device comes along, clamped like any other save
+      DB.users[id].save = sanitizeSave(body.save, { coins: 0, xp: 0, trophies: 0, matches: 0, wins: 0, goals: 0 }, club);
+      leagueCache = null;
+      saveDB();
+      // the code goes back this once, to be written down; after this only its scrambled form exists
+      return sendJSON(res, 200, { ok: true, token: issueToken(id), ...publicUser(id), recovery: rec.code });
+    }
+    const u = getUser(id);
+    if (!u) return sendJSON(res, 200, { ok: false, msg: 'No account with that username' });
+    if (str(body.password).length > 200) return sendJSON(res, 200, { ok: false, msg: 'Wrong password' });
+    if (await hashPassword(body.password, u.salt, u.iterations) !== u.hash) return sendJSON(res, 200, { ok: false, msg: 'Wrong password' });
+    if (u.banned) return sendJSON(res, 200, { ok: false, banned: true, msg: bannedMsg(u) });
+    const gift = deliverGifts(u); // the game takes the account's save as it comes back here
+    return sendJSON(res, 200, { ok: true, token: issueToken(id), ...publicUser(id), gift });
+  }
+
+  // Forgot the password: the username, the recovery code and a new password. The code is used up
+  // (a new one comes back, to write down), and every device that was signed in is signed out.
+  if (route === '/api/auth/recover') {
+    if (throttled(ip, 'recover', 10, 15 * 60000)) return sendJSON(res, 429, { ok: false, msg: 'Too many tries. Wait a few minutes' });
+    const bad = validateUsername(body.username);
+    if (bad) return sendJSON(res, 200, { ok: false, msg: bad });
+    const id = normalizeId(body.username), u = getUser(id);
+    if (!u || id === LEAGUE_ID) return sendJSON(res, 200, { ok: false, msg: 'No account with that username' });
+    if (u.banned) return sendJSON(res, 200, { ok: false, banned: true, msg: bannedMsg(u) });
+    const fails = recoverFails.get(id);
+    const fresh = !fails || Date.now() - fails.at > RECOVER_LOCK;
+    if (!fresh && fails.n >= RECOVER_TRIES) return sendJSON(res, 200, { ok: false, msg: 'Too many wrong codes for that account. Try again in half an hour' });
+    if (!(await recoveryMatches(u, body.code))) {
+      recoverFails.set(id, fresh ? { n: 1, at: Date.now() } : { n: fails.n + 1, at: fails.at });
+      return sendJSON(res, 200, { ok: false, msg: 'That recovery code is not right' });
+    }
+    const problem = validateNewPassword(id, body.password);
+    if (problem) return sendJSON(res, 200, { ok: false, msg: problem });
+    const salt = crypto.randomBytes(16).toString('base64');
+    const hash = await hashPassword(body.password, salt, PBKDF2_ITERATIONS);
+    const rec = await newRecovery();
+    // the account may have gone (deleted, banned) while those were being worked out
+    if (getUser(id) !== u || u.banned) return sendJSON(res, 200, { ok: false, msg: 'That did not work. Try again' });
+    recoverFails.delete(id);
+    u.salt = salt; u.hash = hash; u.iterations = PBKDF2_ITERATIONS;
+    u.recovery = rec.record;
+    signOutEverywhere(id);
+    const gift = deliverGifts(u);
+    saveDB();
+    return sendJSON(res, 200, { ok: true, token: issueToken(id), ...publicUser(id), gift, recovery: rec.code });
+  }
+
+  const me = userIdFromToken(body.token);
+  if (!me || !getUser(me) || getUser(me).banned) return sendJSON(res, 401, { ok: false, msg: 'Not signed in' });
+  const meUser = getUser(me);
+
+  if (route === '/api/me') { const gift = deliverGifts(meUser); return sendJSON(res, 200, { ok: true, ...publicUser(me), gift }); }
+
+  if (route === '/api/save') {
+    if (throttled(ip, 'save', 40, 60000)) return sendJSON(res, 429, { ok: false, msg: 'Slow down' });
+    meUser.save = sanitizeSave(body.save, meUser.save, meUser.club);
+    // only a game that adds the gift to its own coins may take it (older open pages would overwrite it)
+    const gift = body.gifts === true ? deliverGifts(meUser) : 0;
+    saveDB();
+    return sendJSON(res, 200, { ok: true, save: meUser.save, gift });
+  }
+
+  if (route === '/api/logout') { forgetSession(str(body.token)); return sendJSON(res, 200, { ok: true }); }
+
+  // What the shop may offer this account right now. Nothing is offered unless a store is set up.
+  if (route === '/api/iap/status') {
+    const s = iap.status();
+    const bought = iapLib.boughtToday(meUser);
+    return sendJSON(res, 200, { ok: true, enabled: s.enabled, test: s.test, bought, limit: iapLib.IAP_DAILY_PACKS, canBuy: s.enabled && bought < iapLib.IAP_DAILY_PACKS });
+  }
+
+  // Cash in a purchase. The store is asked whether it is real; only then are coins credited, once.
+  if (route === '/api/iap/redeem') {
+    if (throttled(ip, 'iap', 40, 60000) || throttled(me, 'iap-user', 25, 60000)) return sendJSON(res, 429, { ok: false, msg: 'Slow down', retry: true });
+    const v = await iap.verify(body);
+    if (!v.ok) return sendJSON(res, 200, { ok: false, msg: v.msg, retry: !!v.retry });
+    // the account may have been deleted while the store was being asked
+    if (getUser(me) !== meUser) return sendJSON(res, 401, { ok: false, msg: 'Not signed in' });
+    // From here to the ledger write there is no await, so two copies of one request cannot both pass.
+    const owner = txOwner.get(v.txid);
+    if (owner && owner !== me) return sendJSON(res, 200, { ok: false, msg: 'That purchase already belongs to another account', final: true });
+    if (owner === me) return sendJSON(res, 200, { ok: true, again: true, coins: 0, delivered: 0 });
+    const product = iap.product(v.productId);
+    meUser.purchases = meUser.purchases || {};
+    meUser.purchases[v.txid] = { product: product.id, coins: product.coins, at: Date.now(), day: iapLib.dayKey(), env: v.env };
+    txOwner.set(v.txid, me);
+    meUser.pendingCoins = (Number(meUser.pendingCoins) || 0) + product.coins;
+    // Written for certain before the game is told: once it is, the store is told the purchase is
+    // delivered and will not offer it again. If the write fails, undo it all and let the game retry.
+    if (!(await saveUserNow(me))) {
+      delete meUser.purchases[v.txid]; txOwner.delete(v.txid);
+      meUser.pendingCoins = Math.max(0, (Number(meUser.pendingCoins) || 0) - product.coins);
+      return sendJSON(res, 200, { ok: false, msg: 'Could not save that just now', retry: true });
+    }
+    const delivered = deliverGifts(meUser);
+    saveDB();
+    console.log(`iap ${v.env} ${v.txid} ${product.id} -> ${me}`);
+    return sendJSON(res, 200, { ok: true, coins: product.coins, delivered });
+  }
+
+  // Change your own password. You are signed in already and you still have to know the current
+  // one, so a borrowed phone cannot lock the owner out. Nothing here can read the old password:
+  // it is only ever checked by hashing what was typed and comparing.
+  if (route === '/api/account/password') {
+    if (throttled(ip, 'auth', 20, 60000)) return sendJSON(res, 429, { ok: false, msg: 'Too many attempts, wait a minute' });
+    const current = str(body.password), next = str(body.newPassword);
+    if (current.length > 200 || (await hashPassword(current, meUser.salt, meUser.iterations)) !== meUser.hash) {
+      return sendJSON(res, 200, { ok: false, msg: 'That is not your current password' });
+    }
+    const problem = validateNewPassword(meUser.name, next);
+    if (problem) return sendJSON(res, 200, { ok: false, msg: problem });
+    if (next === current) return sendJSON(res, 200, { ok: false, msg: 'That is the password you already have' });
+    const salt = crypto.randomBytes(16).toString('base64');
+    meUser.salt = salt;
+    meUser.iterations = PBKDF2_ITERATIONS;
+    meUser.hash = await hashPassword(next, salt, PBKDF2_ITERATIONS);
+    // every other device is signed out; the one that changed it stays signed in
+    const keep = str(body.token);
+    for (const s of meUser.sessions || []) if (s.token !== keep) tokens.delete(s.token);
+    meUser.sessions = (meUser.sessions || []).filter((s) => s.token === keep);
+    saveDB();
+    return sendJSON(res, 200, { ok: true, msg: 'Password changed. Any other device has been signed out.' });
+  }
+
+  // A new recovery code (for an account made before there were any, or one whose code was lost).
+  // It takes the password, so a borrowed phone can't swap the code out from under the owner.
+  if (route === '/api/account/recovery') {
+    if (throttled(ip, 'auth', 20, 60000)) return sendJSON(res, 429, { ok: false, msg: 'Too many attempts, wait a minute' });
+    if (str(body.password).length > 200 || (await hashPassword(body.password, meUser.salt, meUser.iterations)) !== meUser.hash) {
+      return sendJSON(res, 200, { ok: false, msg: 'Wrong password' });
+    }
+    const rec = await newRecovery();
+    if (getUser(me) !== meUser) return sendJSON(res, 401, { ok: false, msg: 'Not signed in' });
+    meUser.recovery = rec.record;
+    saveDB();
+    return sendJSON(res, 200, { ok: true, recovery: rec.code });
+  }
+
+  // Report a username as rude or weird. See "reports and bans" above for what happens next.
+  if (route === '/api/report') {
+    if (throttled(ip, 'report', 30, 3600000) || throttled(me, 'report-user', 10, 86400000)) return sendJSON(res, 429, { ok: false, msg: 'Too many reports today' });
+    const them = normalizeId(body.name), target = validateUsername(them) ? null : getUser(them);
+    if (!target || them === LEAGUE_ID || target.banned) return sendJSON(res, 200, { ok: false, msg: `No player called ${them.toUpperCase().slice(0, 14) || 'that'}` });
+    if (them === me) return sendJSON(res, 200, { ok: false, msg: "You can't report yourself" });
+    if (Date.now() - (Number(meUser.created) || 0) < REPORT_MIN_AGE) return sendJSON(res, 200, { ok: false, msg: 'Your account is too new to report yet' });
+    const now = Date.now();
+    const reports = (Array.isArray(target.reports) ? target.reports : []).filter((r) => r && r.by && getUser(r.by) && now - (Number(r.at) || 0) < REPORT_KEEP);
+    if (reports.some((r) => r.by === me)) return sendJSON(res, 200, { ok: true, msg: `You already reported ${target.name}` });
+    reports.push({ by: me, at: now });
+    target.reports = reports;
+    if (isRude(target.name || them)) banAccount(them, 'username');
+    else if (new Set(reports.map((r) => r.by)).size >= REPORTS_TO_BAN) banAccount(them, 'reported');
+    saveDB();
+    return sendJSON(res, 200, { ok: true, msg: `Reported ${target.name}. Thanks!` });
+  }
+
+  if (route === '/api/account/delete') {
+    if (await hashPassword(str(body.password), meUser.salt, meUser.iterations) !== meUser.hash) return sendJSON(res, 200, { ok: false, msg: 'Wrong password' });
+    game.removeUser(me);
+    for (const t of Object.keys(meUser.purchases || {})) txOwner.delete(t);
+    for (const [tok, id] of tokens) if (id === me) tokens.delete(tok);
+    delete DB.users[me]; persisted.delete(me); leagueCache = null;
+    forgetEverywhere(DB.users, me, LEAGUE_ID); // off everyone's friends lists
+    try { await store.remove(me); } catch (e) { console.error('delete failed:', e.message); }
+    saveDB();
+    return sendJSON(res, 200, { ok: true });
+  }
+
+  return sendJSON(res, 404, { ok: false, msg: 'Unknown endpoint' });
+}
+
+// Live play. The first message has to be {t:'auth', token} within a few seconds.
+attach(server, '/ws', (ws) => {
+  const timer = setTimeout(() => ws.close(4001), 5000);
+  const onAuth = (msg) => {
+    if (msg.t !== 'auth') return;
+    clearTimeout(timer);
+    ws.removeListener('message', onAuth);
+    const id = userIdFromToken(msg.token);
+    if (!id || !getUser(id) || getUser(id).banned) { ws.send(JSON.stringify({ t: 'error', msg: 'Not signed in', auth: false })); ws.close(4001); return; }
+    game.connect(ws, id);
+  };
+  ws.on('message', onAuth);
+});
+process.on('unhandledRejection', (err) => console.error('unhandled rejection:', (err && err.stack) || err));
+process.on('uncaughtException', (err) => console.error('uncaught exception:', (err && err.stack) || err));
+for (const signal of ['SIGTERM', 'SIGINT']) {
+  process.on(signal, async () => { clearTimeout(saveTimer); try { await flushDB(); } catch (e) {} process.exit(0); });
+}
+
+(async () => {
+  try { DB.users = await store.load(); }
+  catch (e) { console.error(`Could not load accounts from ${store.kind}: ${e.message}`); process.exit(1); }
+  for (const id of Object.keys(DB.users)) persisted.set(id, JSON.stringify(DB.users[id]));
+  for (const [id, u] of Object.entries(DB.users)) for (const t of Object.keys((u && u.purchases) || {})) txOwner.set(t, id);
+  // the league used to be clubs: anyone still on a club plays for that club's country
+  for (const [id, u] of Object.entries(DB.users)) {
+    if (id === LEAGUE_ID) continue;
+    const country = game.countryFor(u.club);
+    if (u.club !== country) { u.club = country; if (u.save) { u.save.club = country; u.save.cup = null; } leagueCache = null; saveDB(); }
+  }
+  // the clean slate, if its key has not been spent yet
+  await wipeEverything();
+  sweepNames();
+  restoreSessions();
+  queueGifts();
+  // an account that signs up later still gets what was meant for it
+  setInterval(() => queueGifts(true), 300000).unref();
+  server.listen(PORT, () => {
+    console.log(`Mini Strikers server on http://localhost:${PORT}`);
+    console.log(`accounts: ${Object.keys(DB.users).filter((id) => id !== LEAGUE_ID).length} (storage: ${store.kind})`);
+  });
+})();
