@@ -116,13 +116,14 @@ const Match = {
     b.reset(W / 2, H / 2);
     let kicker = null;
     for (const p of m.players) {
+      if (p.boxed) { const s = Rules.boxSpot(p.team, Rules.seatOf(m, p)); p.x = s.x; p.y = s.y; p.vx = 0; p.vy = 0; p.mx = 0; p.my = 0; continue; }
       const dir = TEAMS[p.team].dir;
       let u, v;
       if (p.isKeeper) { u = 36 / W; v = 0.5; }
       else { [u, v] = spots[p.role]; }
       p.x = dir > 0 ? u * W : (1 - u) * W;
       p.y = v * H;
-      if (!p.isKeeper && p.role === 'att' && p.team === team) {
+      if (!p.isKeeper && p.role === 'att' && p.team === team && !kicker) {
         kicker = p;
         p.x = W / 2 - dir * (p.r + CFG.BALL_R + 3);
         p.y = H / 2;
@@ -136,15 +137,15 @@ const Match = {
     }
     Replay.clear(m);
     // the faceoff: the other side's centre across the dot from the one taking it, facing them
-    const opp = m.players.find((p) => !p.isKeeper && p.role === 'att' && p.team !== team)
-      || m.players.find((p) => !p.isKeeper && p.team !== team);
+    const opp = m.players.find((p) => !p.isKeeper && !p.boxed && p.role === 'att' && p.team !== team)
+      || m.players.find((p) => !p.isKeeper && !p.boxed && p.team !== team);
     if (opp) {
       const dir = TEAMS[opp.team].dir;
       opp.x = W / 2 - dir * (opp.r + CFG.BALL_R + 16); opp.y = H / 2;
       opp.fx = dir; opp.faceX = dir;
     }
     if (!kicker) {
-      kicker = m.players.find((p) => p.team === team && !p.isKeeper) || m.players.find((p) => !p.isKeeper);
+      kicker = m.players.find((p) => p.team === team && !p.isKeeper && !p.boxed) || m.players.find((p) => !p.isKeeper && !p.boxed) || m.players.find((p) => !p.isKeeper);
       const dir = TEAMS[kicker.team].dir;
       kicker.x = W / 2 - dir * (kicker.r + CFG.BALL_R + 3); kicker.y = H / 2;
       kicker.fx = dir; kicker.faceX = dir;
@@ -183,8 +184,8 @@ const Match = {
         AI.update(m, sdt);
         movePlayers(m, sdt);
         updateBall(m, sdt);
-        // PRO MATCH: over the line is out, and the game restarts from where it went
-        if (m.rules && Rules.out(m.ball)) { Rules.start(m); break; }
+        // PRO MATCH: icing and the penalty box (js/rules.js); either can stop play for a faceoff
+        if (m.rules && Rules.watch(m, sdt)) break;
         checkSlides(m);
         Replay.record(m, sdt);
         this.checkGoal(m);
@@ -273,6 +274,7 @@ const Match = {
 
   // one real player's controls: the local Input, or that player's network input on the server
   humanControl(m, h, dt) {
+    if (h.boxed) { h.mx = 0; h.my = 0; return; }   // (in the penalty box: nothing to do but wait)
     const b = m.ball, I = h.input || Input;
     const mv = I.move, mag = Math.hypot(mv.x, mv.y);
     // buttons aim with the stick as it was when they were pressed (online: the message that carried them)
@@ -465,6 +467,7 @@ const Match = {
 
   goalScored(m, team) {
     const b = m.ball;
+    if (m.rules) Rules.goal(m, team);   // (a power-play goal lets one out of the box)
     m.phase = 'goal'; m.phaseT = 0;
     Replay.markGoal(m);
     m.score[team]++;

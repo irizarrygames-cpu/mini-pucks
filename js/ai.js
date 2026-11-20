@@ -332,7 +332,7 @@ const AI = {
         if (front && d < nearOpp) nearOpp = d;
       }
       this.wantSprint(p, nearOpp > 140 && dG > 360);
-      if (m.rules && this.outOfPlay(m, p, nearOpp)) return;
+      // (Mini Strikers' bots put the ball out on purpose in PRO MATCH; a puck cannot go out)
       // too big a touch with a defender close: the ball runs away
       if (nearOpp < 85 && p.protectT <= 0 && !p.skill && Math.random() < BOT_MISTAKES.looseTouch * slip) {
         loseBall(m, p, 0.3);

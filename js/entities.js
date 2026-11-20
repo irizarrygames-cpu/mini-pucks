@@ -108,6 +108,7 @@ function movePlayers(m, dt) {
     p.hopT = Math.max(0, p.hopT - dt);
     p.dodgeT = Math.max(0, p.dodgeT - dt);
     if (p.ultShot) { p.ultShot.t += dt; if (p.ultShot.t >= p.ultShot.dur) p.ultShot = null; }
+    if (p.boxed) { p.vx = 0; p.vy = 0; p.mx = 0; p.my = 0; p.slideT = 0; continue; }   // (PRO MATCH: in the penalty box)
 
     // sprint + stamina: running dry locks sprint until it refills to SPRINT.unlock
     const canSprint = p.sprinting && !p.exhausted && !p.isKeeper && p.slideT <= 0 && p.fallT <= 0 && p.speed > 60;
@@ -227,6 +228,7 @@ function movePlayers(m, dt) {
     for (let i = 0; i < ps.length; i++) {
       for (let j = i + 1; j < ps.length; j++) {
         const a = ps[i], c = ps[j];
+        if (a.boxed || c.boxed) continue;   // (the penalty box is off the ice)
         const dx = c.x - a.x, dy = c.y - a.y, min = a.r + c.r;
         const d2 = dx * dx + dy * dy;
         if (d2 >= min * min) continue;
@@ -454,7 +456,7 @@ function keeperContact(m, k, b, sp) {
   const inFront = (b.x - ownGoalX(k.team)) * out;  // how far in front of the line the ball is
   const tipVy = rand(400, 500), clearPost = Math.abs(postY - b.y) + CFG.BALL_R + 26;
   const tipVx = (tipVy * inFront) / clearPost * 0.85;
-  if (m.rules && inFront > 20 && tipVx > 30 && Math.random() < KEEPER_TIP) {
+  if (false && m.rules && inFront > 20 && tipVx > 30 && Math.random() < KEEPER_TIP) {   // (football: tipped over for a corner)
     b.vx = -out * Math.min(tipVx, 240);
     b.vy = side * tipVy;
   } else {
@@ -933,6 +935,7 @@ function checkSlides(m) {
       if (Math.random() < chance) trip(m, p, c);
       else {
         p.recoverT = 0.2;
+        if (m.rules && !fromFront && hitBody && Rules.maybeCall(m, p, c)) continue;   // TRIPPING (PRO MATCH)
         if (c.isHuman || p.isHuman) FX.text(c.x, c.y, tl('MISSED!'), '#ffffff', 14);
       }
     } else if (!c && hitBall && !ballOverLine(b) && !(p.isKeeper && !inOwnBox(p.team, b.x, b.y))) {

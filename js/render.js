@@ -694,7 +694,7 @@ const Render = {
     return Math.min(1, Math.max(this.PULL.MIN, this.W / this.S / wide, this.H / this.S / tall));
   },
   updateCamera(m, dt, snap) {
-    const h = m.human, b = m.ball;
+    const b = m.ball, h = m.human && m.human.boxed ? { x: b.x, y: b.y, vx: 0, vy: 0 } : m.human;
     let tx, ty, pull = 1;
     // PRO MATCH: taking a throw-in or a corner yourself, the camera may go out into the stands to
     // keep you clear of the stick and the buttons (eased in and out, so nothing jumps)
@@ -925,7 +925,7 @@ const Render = {
     if (m.net) this.drawNames(ctx, m); else this.drawChatOnly(ctx, m);
     if (!m.demo) {
       if (m.phase !== 'cele') this.drawIndicators(ctx, m);
-      if (m.phase === 'restart' && typeof Rules !== 'undefined') Rules.drawAim(ctx, m, t);
+      if (m.rules && typeof Rules !== 'undefined') Rules.drawBox(ctx, m);
       if (m.phase !== 'cele') this.drawSlideWarning(ctx, m, t);
       if (Save.data.settings.minimap && m.phase !== 'timeup' && this.zoom < 1.05) this.drawMinimap(ctx, m);
     }
