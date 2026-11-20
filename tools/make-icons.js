@@ -3,7 +3,7 @@
 // The game ships no image files — everything is drawn from shapes at runtime. Icons are
 // the one thing a phone insists on having as real files, so they are drawn here in the
 // game's flat vocabulary (solid fills, thick ink outlines, hard shadows, no gradients):
-// a flaming ball rocketing out of an arcade sunburst. PNGs are written with Node's own
+// a flaming puck rocketing out of an arcade sunburst. PNGs are written with Node's own
 // zlib (no image library). There is no SVG icon: its strokes never matched the PNGs, and every
 // device should show exactly the same pixels.
 
@@ -66,6 +66,7 @@ const hex = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), pa
 const C = {
   ray1: '#2f7bff', ray2: '#1f5fe0', ink: '#16171d', shadow: '#0f2f7a',
   white: '#ffffff', yellow: '#ffe14d', orange: '#ff7a1a', red: '#ff3f3f',
+  puckTop: '#2c3140', puckSide: '#121419', ring: '#5d6479',
 };
 const RGB = Object.fromEntries(Object.entries(C).map(([k, v]) => [k, hex(v)]));
 
@@ -151,14 +152,19 @@ function shade(x, y) {
   }
   if (inPoly(x, y, FLAME)) col = inPoly(x, y, INNER) ? RGB.yellow : RGB.orange;
   else if (polyEdgeDist(x, y, FLAME) <= INK) col = RGB.ink;
-  // hard shadow, then the ball
-  const ds = Math.hypot(x - (BALL.x + 0.03), y - (BALL.y + 0.035));
-  if (ds <= BALL.r + INK) col = RGB.shadow;
-  const d = Math.hypot(x - BALL.x, y - BALL.y);
-  if (d <= BALL.r + INK) col = RGB.ink;
-  if (d <= BALL.r) {
-    col = RGB.white;
-    for (const p of PATCHES) if (inPoly(x, y, p)) col = RGB.ink;
+  // hard shadow, then the puck: a flat disc tilted towards you (its side band, then its top, a ring on it)
+  const PR = BALL.r * 1.14, PY = BALL.r * 0.62, TH = BALL.r * 0.5, top = BALL.y - TH / 2, bot = top + TH;
+  const ell = (px, py, cy, rx, ry) => ((px - BALL.x) / rx) ** 2 + ((py - cy) / ry) ** 2 <= 1;
+  const puck = (px, py, grow) => ell(px, py, top, PR + grow, PY + grow) || ell(px, py, bot, PR + grow, PY + grow) || (Math.abs(px - BALL.x) <= PR + grow && py >= top && py <= bot);
+  if (puck(x - 0.03, y - 0.035, INK)) col = RGB.shadow;
+  if (puck(x, y, INK)) col = RGB.ink;
+  if (puck(x, y, 0)) {
+    col = RGB.puckSide;
+    if (ell(x, y, top, PR, PY)) {
+      col = RGB.puckTop;
+      if (!ell(x, y, top, PR - INK * 0.8, PY - INK * 0.8)) col = RGB.ink;
+      else if (ell(x, y, top, PR * 0.66, PY * 0.66) && !ell(x, y, top, PR * 0.54, PY * 0.54)) col = RGB.ring;
+    }
   }
   return col;
 }

@@ -2458,3 +2458,14 @@ body.lefty #touch-zone { left: 50%; }
 }
 /* the logo steps aside when the bars above PLAY reach up into it (UI.tuckLogo) */
 #home.logo-tucked #logo { visibility: hidden; }
+
+/* Mini Pucks: the title logo is a puck, not a ball: a flat disc seen from just above (its top, its
+   dark side band under it) sliding side to side on the ice */
+.splash-ball {
+  width: clamp(96px, 28vmin, 170px); height: clamp(50px, 15vmin, 90px); border-radius: 50%;
+  background: #2c3140 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 20'%3E%3Cellipse cx='20' cy='10' rx='12' ry='5.6' fill='none' stroke='%235d6479' stroke-width='1.6'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+  border: 6px solid var(--ink); box-shadow: 0 13px 0 #121419, 0 19px 0 var(--ink);
+  margin-bottom: 19px;
+  animation: puckSlide 0.9s ease-in-out infinite alternate;
+}
+@keyframes puckSlide { from { transform: translateX(-4vmin) rotate(-3deg); } to { transform: translateX(4vmin) rotate(3deg); } }
