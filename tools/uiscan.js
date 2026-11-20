@@ -171,7 +171,7 @@ window.US = {
     {
       const keep = { cc: JSON.stringify(Save.data.cc || null), arena: Save.data.arena, seen: Save.data.seenCC, refund: Save.data.refundNote };
       const cc = Career.state();
-      if (!cc.club) Object.assign(cc, { club: 'barcelonablau', goal: 45, assist: 25, since: Date.now(), until: Date.now() + CC_PERIOD, goals: 12, assists: 7, earned: 715 });
+      if (!cc.club) Object.assign(cc, { club: 'torontoblue', goal: 45, assist: 25, since: Date.now(), until: Date.now() + CC_PERIOD, goals: 12, assists: 7, earned: 715 });
       Save.data.arena = 'club';
       UI.refreshHome();
       await wait(250);

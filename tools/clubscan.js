@@ -61,15 +61,15 @@ async function finishWith(id, mine, theirs) {
   console.log('a club player online: their kit, their own player, their accessories');
   {
     const ws = connect('star');
-    ws.msg({ t: 'arena', club: 'madridblanco' });
+    ws.msg({ t: 'arena', club: 'bostonblack' });
     const n = ws.got.length;
     ws.msg({ t: 'queue', format: '1v1' });
     const st = await waitFor(ws, 'start', n);
     check('the match started (filled in after the wait)', !!st);
     const room = game._roomOf('star'), seat = room.seats.find((s) => s.userId === 'star');
-    check('they wear their club', st && st.clubs[st.side] === 'madridblanco', st && st.clubs);
+    check('they wear their club', st && st.clubs[st.side] === 'bostonblack', st && st.clubs);
     const other = st && st.clubs[st.side === 'blue' ? 'red' : 'blue'];
-    check('the side with nobody on it is a club too, not a country', EURO.has(other) && other !== 'madridblanco', other);
+    check('the side with nobody on it is a club too, not a country', EURO.has(other) && other !== 'bostonblack', other);
     const me = st && st.players[st.you];
     check('their look comes from the save', me && me.look.hair === 'afro' && me.look.buff === 1 && me.look.hairColor === '#2f7bff', me && me.look);
     check('every accessory they own and wear, and none they do not own', me && JSON.stringify(me.look.accs) === JSON.stringify(['shades', 'halo', 'cape']), me && me.look.accs);
@@ -152,7 +152,7 @@ async function finishWith(id, mine, theirs) {
   {
     // (a fresh connection: the server drops one that has been quiet for a minute, as a phone's would be)
     const ws = connect('star');
-    ws.msg({ t: 'arena', club: 'madridblanco' });
+    ws.msg({ t: 'arena', club: 'bostonblack' });
     await sleep(200);
     let n = ws.got.length;
     ws.msg({ t: 'queue', format: '1v1', wc: true, cup: 'cc' });
@@ -175,7 +175,7 @@ async function finishWith(id, mine, theirs) {
     ws.msg({ t: 'unqueue' });
     await sleep(200);
     // walking off a Champions Cup match knocks you out of the Champions Cup only
-    ws.msg({ t: 'arena', club: 'madridblanco' });
+    ws.msg({ t: 'arena', club: 'bostonblack' });
     await sleep(100);
     n = ws.got.length;
     ws.msg({ t: 'queue', format: '1v1', wc: true, cup: 'cc' });

@@ -334,9 +334,9 @@ function createGame({ getUser, userName, saveDB, onlineRecord, isNameTaken, worl
 
   // Which club's kit a player wears online: the one their game said (Club Career), or none.
   const EURO_IDS = new Set(sim.EURO_CLUBS.map((c) => c.id));
-  // The first fifty clubs (build 111); build 116 added fifty more. A game older than that has never
-  // heard of the new ones, so a match with one of those in it only fills a side with the first fifty.
-  const FIRST_CLUBS = sim.EURO_CLUBS.slice(0, 50).map((c) => c.id);
+  // (Mini Strikers kept older apps to its first fifty clubs; Mini Pucks has had all thirty-two pro
+  // teams from the start, so every app knows every one.)
+  const FIRST_CLUBS = sim.EURO_CLUBS.map((c) => c.id);
   const clubPool = (other, ids) => (!EURO_IDS.has(other) ? sim.CLUBS.map((c) => c.id) : ids.every((x) => !x || canPro(x)) ? [...EURO_IDS] : FIRST_CLUBS);
   const clubOf = (id) => { const c = conns.get(id); return c && EURO_IDS.has(c.club) ? c.club : null; };
   // How good a player's stats make them, from the save the server keeps: 60 is where everyone

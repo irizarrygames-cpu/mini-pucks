@@ -598,8 +598,9 @@ function stadiumFor(club) {
   const id = (club && club.id) || (typeof DEFAULT_CLUB === 'string' ? DEFAULT_CLUB : 'spain');
   const season = Seasons.now();
   if (_grounds[id + '/' + season]) return _grounds[id + '/' + season];
-  // a club plays in its country's kind of ground, named after its own city
-  const ground = COUNTRY_GROUNDS[id] || (club && club.euro && COUNTRY_GROUNDS[club.country] ? { ...COUNTRY_GROUNDS[club.country], city: club.city } : DEFAULT_GROUND);
+  // a pro team plays in its country's kind of arena, named after its own city, and its crowd
+  // chants for the city (not the country)
+  const ground = COUNTRY_GROUNDS[id] || (club && club.euro && COUNTRY_GROUNDS[club.country] ? { ...COUNTRY_GROUNDS[club.country], city: club.city, chant: 'GO ' + club.city + ' GO!' } : DEFAULT_GROUND);
   const k = STADIUM_KINDS[ground.kind] || STADIUM_KINDS.day;
   const kit = club && club.home ? club.home : null;
   // the stands take the country's colours, dark enough that the crowd still reads on top of them

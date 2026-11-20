@@ -542,6 +542,142 @@ const Crests = {
         line('M50 14 L50 86 M18 44 L82 44', L * 0.6, alt);
         break;
       }
+      // ---- the pro teams' symbols (the same drawings as Mini Dunkers')
+      case 'bell': {
+        // a big old bell, a crack running down it
+        ring(50, 88, 7, dark);
+        fs(P('M42 4 L58 4 L58 16 L42 16 Z'), dark);
+        fs(P('M50 14 C34 14 29 27 29 44 C29 60 23 70 14 77 L86 77 C77 70 71 60 71 44 C71 27 66 14 50 14 Z'), col);
+        fs(P('M10 75 L90 75 L90 85 L10 85 Z'), col);
+        line('M37 28 C35 40 35 54 31 66', L * 0.7, alt);
+        line('M52 28 L47 41 L54 51 L48 66', L * 0.9, ink);
+        break;
+      }
+      case 'claw': {
+        // three claw marks torn across the badge
+        for (const dx of [-19, 0, 19]) {
+          g.save(); g.translate(dx, Math.abs(dx) * 0.2);
+          fs(P('M34 94 C40 70 50 42 66 6 C62 40 58 66 50 94 Z'), col);
+          g.restore();
+        }
+        break;
+      }
+      case 'gear': {
+        // a big machine gear, its hub cut out
+        g.beginPath();
+        const T = 10, w = Math.PI / T;
+        for (let i = 0; i < T; i++) {
+          const a = (i / T) * Math.PI * 2;
+          for (const [da, r] of [[-w * 0.42, 47], [w * 0.42, 47], [w * 0.62, 37], [w * 1.38, 37]]) g.lineTo(50 + Math.cos(a + da) * r, 50 + Math.sin(a + da) * r);
+        }
+        g.closePath(); g.fillStyle = col; g.fill(); g.lineWidth = L; g.strokeStyle = ink; g.stroke();
+        ring(50, 50, 21, alt);
+        ring(50, 50, 9, dark);
+        break;
+      }
+      case 'flag': {
+        // a checkered flag flying from its pole
+        thick('M16 6 L16 96', 4.5, '#c4ced4');
+        const cloth = P('M18 8 C38 0 56 16 76 8 L90 6 L90 54 C72 62 56 46 38 54 L18 58 Z');
+        g.save(); g.clip(cloth);
+        g.fillStyle = '#ffffff'; g.fillRect(0, 0, 100, 100);
+        g.fillStyle = ink;
+        for (let r = 0; r < 6; r++) for (let c = 0; c < 7; c++) if ((r + c) % 2) g.fillRect(18 + c * 10.5, r * 10.5, 10.5, 10.5);
+        g.restore();
+        g.lineWidth = L; g.strokeStyle = ink; g.stroke(cloth);
+        break;
+      }
+      case 'hornet': {
+        // a hornet: wings up, a striped body, its stinger out
+        fs(P('M46 42 C32 12 8 14 13 30 C17 41 33 46 46 46 Z'), '#e8f4ff');
+        fs(P('M54 42 C68 12 92 14 87 30 C83 41 67 46 54 46 Z'), '#e8f4ff');
+        const body = P('M50 44 C66 44 71 62 63 78 L50 97 L37 78 C29 62 34 44 50 44 Z');
+        g.fillStyle = '#ffc21a'; g.fill(body);
+        g.save(); g.clip(body); g.fillStyle = col; g.fillRect(0, 56, 100, 7); g.fillRect(0, 70, 100, 7); g.restore();
+        g.lineWidth = L; g.strokeStyle = ink; g.stroke(body);
+        line('M45 26 L36 10 M55 26 L64 10', L * 0.9, ink);
+        ring(50, 34, 12, col);
+        dot(45, 33, 3, '#ffffff'); dot(55, 33, 3, '#ffffff');
+        break;
+      }
+      case 'flame': {
+        // one big flame, a bright heart in it
+        fs(P('M50 4 C58 22 80 30 80 58 C80 80 66 95 50 95 C34 95 20 80 20 60 C20 46 28 38 34 30 C36 42 40 48 46 50 C40 34 42 18 50 4 Z'), col);
+        fs(P('M52 40 C58 52 68 58 68 72 C68 84 60 90 50 90 C40 90 32 82 32 72 C32 64 38 58 42 54 C44 62 48 64 52 64 C48 56 48 48 52 40 Z'), '#ffe14d');
+        break;
+      }
+      case 'rose': {
+        // a rose on its stem, a leaf either side
+        thick('M50 56 C47 70 53 82 50 97', 4, '#2f9e44');
+        fs(P('M49 76 C40 64 26 66 20 72 C28 81 41 82 49 76 Z'), '#3fcf4a');
+        fs(P('M51 68 C60 58 73 60 79 65 C71 73 58 74 51 68 Z'), '#3fcf4a');
+        fs(P('M50 10 C67 8 81 21 79 39 C77 54 65 61 50 61 C35 61 23 54 21 39 C19 21 33 8 50 10 Z'), col);
+        line('M50 22 C61 21 64 35 53 38 C44 40 41 29 48 27', L * 0.8, dark);
+        line('M30 34 C36 50 64 50 70 34', L * 0.8, dark);
+        break;
+      }
+      case 'arch': {
+        // a red-rock arch standing on its ledge
+        fs(P('M4 94 L8 80 L92 80 L96 94 Z'), dark);
+        fs(P('M14 82 C12 54 16 26 34 14 C46 6 62 8 72 18 C84 30 88 54 86 82 L72 82 C74 58 70 38 60 30 C52 24 42 26 36 34 C28 46 28 62 30 82 Z'), col);
+        line('M20 70 L24 58 M80 66 L78 54 M40 18 L48 16', L * 0.6, dark);
+        break;
+      }
+      case 'bridge': {
+        // a suspension bridge over the bay: two towers, the cable swooping between them
+        thick('M2 90 Q12 84 22 90 T42 90 T62 90 T82 90 T100 90', 2.6, '#46d9ff');
+        thick('M2 30 Q16 30 26 18 Q50 62 74 18 Q84 30 98 30', 2.4, col);
+        line('M34 30 L34 66 M42 38 L42 66 M50 40 L50 66 M58 38 L58 66 M66 30 L66 66 M12 30 L12 66 M88 30 L88 66', L * 0.6, col);
+        fs(P('M0 63 L100 63 L100 70 L0 70 Z'), col);
+        for (const x of [22, 70]) {
+          fs(P(`M${x} 10 L${x + 8} 10 L${x + 8} 84 L${x} 84 Z`), col);
+          line(`M${x} 26 L${x + 8} 26 M${x} 44 L${x + 8} 44`, L * 0.8, ink);
+        }
+        break;
+      }
+      case 'sun': {
+        // a blazing sun
+        g.beginPath();
+        for (let i = 0; i < 24; i++) { const a = (i / 24) * Math.PI * 2, r = i % 2 ? 33 : 48; g.lineTo(50 + Math.cos(a) * r, 50 + Math.sin(a) * r); }
+        g.closePath(); g.fillStyle = col; g.fill(); g.lineWidth = L; g.strokeStyle = ink; g.stroke();
+        ring(50, 50, 27, shadeHex(col, 0.22));
+        g.fillStyle = 'rgba(255,255,255,0.45)'; g.beginPath(); g.ellipse(41, 40, 8, 5, -0.6, 0, Math.PI * 2); g.fill();
+        break;
+      }
+      case 'rocket': {
+        // a rocket climbing, fire out of the bottom
+        g.save(); g.translate(50, 50); g.rotate(0.55); g.translate(-50, -50);
+        fs(P('M41 72 L50 99 L59 72 Z'), '#ff8a1f');
+        fs(P('M45 72 L50 88 L55 72 Z'), '#ffe14d');
+        fs(P('M38 52 L24 76 L40 70 Z'), dark); fs(P('M62 52 L76 76 L60 70 Z'), dark);
+        fs(P('M50 2 C62 14 65 34 62 73 L38 73 C35 34 38 14 50 2 Z'), col);
+        fs(P('M50 2 C56 8 59 14 60.5 21 L39.5 21 C41 14 44 8 50 2 Z'), '#ff3a3f');
+        ring(50, 38, 7.5, '#46d9ff');
+        g.restore();
+        break;
+      }
+      case 'note': {
+        // two notes joined at the top: the city's music
+        fs(P('M30 20 L80 8 L80 20 L30 32 Z'), col);
+        fs(P('M30 26 L37 26 L37 76 L30 76 Z'), col);
+        fs(P('M73 14 L80 14 L80 64 L73 64 Z'), col);
+        for (const [hx, hy] of [[24, 78], [67, 66]]) {
+          g.beginPath(); g.ellipse(hx, hy, 14, 9.5, -0.4, 0, Math.PI * 2);
+          g.fillStyle = col; g.fill(); g.lineWidth = L; g.strokeStyle = ink; g.stroke();
+        }
+        break;
+      }
+      case 'spur': {
+        // a cowboy's spur: the curved heel band, the shank, the star-shaped rowel
+        thick('M8 20 C4 54 22 68 42 58', 9, col);
+        thick('M42 58 L52 54', 7, col);
+        g.beginPath();
+        for (let i = 0; i < 16; i++) { const a = (i / 16) * Math.PI * 2 - Math.PI / 2, r = i % 2 ? 20 : 34; g.lineTo(64 + Math.cos(a) * r, 50 + Math.sin(a) * r); }
+        g.closePath(); g.fillStyle = col; g.fill(); g.lineWidth = L; g.strokeStyle = ink; g.stroke();
+        ring(64, 50, 10, dark);
+        ring(9, 20, 7, dark);
+        break;
+      }
     }
     g.restore();
   },
